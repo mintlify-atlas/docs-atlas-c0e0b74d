@@ -1,0 +1,129 @@
+---
+title: "Editor Page"
+description: "The main keyboard remapping interface — visual layout, layer switching, key palette, and macro assignment."
+---
+
+The Editor Page is the central workspace for customizing your keyboard. It opens automatically after you connect a device from the Device Selection screen. The device name is shown in the app bar at the top.
+
+The page is split vertically into two areas:
+
+- **Top area (flex 3)** — the visual keyboard layout and layer selector.
+- **Bottom area (flex 2)** — the key palette used to assign new keycodes.
+
+## UI areas
+
+### Layer buttons (left sidebar)
+
+A narrow vertical panel on the left side of the top area contains the layer selector. It displays four numbered buttons — **0**, **1**, **2**, and **3** — inside a pill-shaped container.
+
+```dart
+// LayerButtons — generates one button per layer
+...List.generate(4, (index) {
+  return LayerButton(
+    child: Text(index.toString(), ...),
+    onPressed: () => onLayerChanged.call(index),
+  );
+}),
+```
+
+Tapping a button switches the editor view to that layer. The selected button is highlighted with the theme's tertiary color. All other buttons use the surface color for the label text.
+
+### Keyboard layout (top center)
+
+The main panel renders a physical representation of the keyboard. Each key is a `KeyUnit` widget — a rounded rectangle that displays the currently assigned keycode label.
+
+Key dimensions follow the standard U (unit) system. A standard alphanumeric key is 1u (54 px). Wider keys such as **Backspace** (2u), **Tab** (1.5u), **Space** (6.25u), and **Shift** (2.25u / 2.75u) are rendered proportionally wider.
+
+```dart
+// KeyUnit — simplified
+Container(
+  width: (keyData.width * uSize) + (keyData.width - 1) * spacing,
+  height: (keyData.height * uSize) + (keyData.height - 1) * spacing,
+  child: DragTarget<String>(
+    onAcceptWithDetails: (details) => onRemap(details.data),
+    builder: (context, candidateData, rejectedData) {
+      final isHovered = candidateData.isNotEmpty;
+      final displayLabel = currentMapping ?? keyData.defaultLabel;
+      // Highlighted in primaryContainer color when a key is dragged over it
+      ...
+    },
+  ),
+)
+```
+
+Each `KeyUnit` is a drag target. When you drag a key from the palette over a target key, the target highlights in the primary container color to indicate it will accept the drop.
+
+The layout is read from the connected device's visual layout definition (`deviceVisualLayouts`). If no definition is registered for the device, the editor falls back to the built-in 60% layout (`keyboardLayout60`).
+
+### Key palette (bottom panel)
+
+The bottom area contains the key palette — a tabbed panel that lists every assignable keycode. It is organized into four tabs:
+
+| Tab | Contents |
+|-----|----------|
+| **Basic** | Standard keyboard keys: letters, digits, punctuation, function keys, modifiers, and navigation keys. |
+| **Media** | Volume and playback controls: `VolUp`, `VolDn`, `Mute`, `Play`, `Next`, `Prev`. |
+| **Macro** | Macro slots M1 through M12, each shown with an inline configuration row. |
+| **Layer** | Layer-momentary keys: `L0`, `L1`, `L2`, `L3`. |
+
+Keys in the **Basic**, **Media**, and **Layer** tabs are rendered as `KeySource` widgets — draggable tiles that you drag onto a target key in the layout above.
+
+Keys in the **Macro** tab are rendered as `MacroSettingMacroSource` widgets. Each row shows the macro slot label (e.g. **M1**) alongside an information container that displays the macro name currently assigned to that slot, or `未設定` (unset) if none is configured.
+
+## How remapping works
+
+<Steps>
+  <Step title="Select a layer">
+    Click one of the numbered buttons (0–3) in the left sidebar to choose the layer you want to edit. The keyboard layout updates immediately to show the keycodes stored on that layer.
+  </Step>
+  <Step title="Find a key in the palette">
+    Browse the **Basic**, **Media**, **Macro**, or **Layer** tab in the bottom panel. Locate the keycode you want to assign.
+  </Step>
+  <Step title="Drag the keycode onto a key">
+    Click and drag the keycode tile from the palette. Hover it over the target key on the keyboard layout — the target key highlights when your drag enters it.
+  </Step>
+  <Step title="Drop to apply">
+    Release the drag. `KeyboardLayout.onKeyRemap` fires immediately, calling `VialNotifier.updateKey` to write the new keycode to the keyboard over USB HID. A snackbar confirms the change:
+
+    ```dart
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Mapped $newMapping to key"),
+        duration: const Duration(milliseconds: 500),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    ```
+
+    No firmware flash or reboot is required. The mapping is live immediately.
+  </Step>
+</Steps>
+
+<Note>
+Layer switching in the editor only changes what is displayed. The keyboard's active layer at runtime is still controlled by the layer-momentary keys you hold while typing.
+</Note>
+
+## Assigning a macro to a key
+
+Macro slots M1–M12 appear in the **Macro** tab of the key palette. Each slot shows an information row that displays the macro currently assigned to it.
+
+<Steps>
+  <Step title="Open the Macro tab">
+    Click the **Macro** tab in the key palette at the bottom of the editor.
+  </Step>
+  <Step title="Configure the macro slot">
+    Click the information row to the right of the macro slot label (e.g. **M1**). A dialog opens where you can configure what that slot does. The available macro types are:
+
+    - **Smart remote control** (`スマートリモコン操作`) — triggers an infrared signal from your registered remote codes.
+    - **Launch app** (`アプリ実行`) — opens an application registered on the system.
+    - **Combo / Text** (`コンボ` / `テキスト入力`) — sends a simultaneous multi-key combination (e.g. Ctrl+Shift+Esc) or pastes a fixed text string via the clipboard.
+    - **AI text conversion** (`AIテキスト変換`) — passes selected text through an AI prompt and replaces it with the result.
+  </Step>
+  <Step title="Assign the macro slot to a key">
+    After configuring the macro, close the dialog. Then drag the macro slot tile (e.g. **M1**) from the palette and drop it onto the physical key in the layout. The key is now bound to that macro slot.
+  </Step>
+</Steps>
+
+<Tip>
+To test a macro before saving, use the **テスト実行** button in the macro settings dialog. This runs the macro immediately without navigating away.
+</Tip>

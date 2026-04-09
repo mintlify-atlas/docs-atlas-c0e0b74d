@@ -1,0 +1,87 @@
+---
+title: "Installation"
+description: "System requirements and instructions for building SwitchPalette from source on Windows."
+---
+
+## System requirements
+
+SwitchPalette is a **Windows-only** desktop application. It uses native Windows APIs for global keyboard monitoring (`win32`), system notifications (`windows_notification`), and window management (`bitsdojo_window`). It does not run on macOS or Linux.
+
+| Requirement | Minimum |
+|---|---|
+| Operating system | Windows 10 or later |
+| Architecture | x64 |
+| USB | Available USB port for keyboard |
+| Keyboard firmware | Vial-compatible (see note below) |
+
+<Note>
+  SwitchPalette only detects keyboards running Vial-compatible firmware. Standard keyboards and keyboards running QMK without Vial will not appear in the device list. See [Device Setup](/configuration/device-setup) for firmware details.
+</Note>
+
+## Build from source
+
+SwitchPalette is distributed as source code. You build and run it using the Flutter toolchain.
+
+### Prerequisites
+
+- [Flutter SDK](https://docs.flutter.dev/get-started/install/windows) — version compatible with Dart SDK `^3.7.2`
+- [Git](https://git-scm.com/)
+- A Firebase project with Firestore enabled (required for infrared remote features and AI text transformation)
+
+<Tip>
+  Run `flutter doctor` after installing Flutter to verify your Windows desktop build environment is set up correctly. You need the "Windows (desktop)" entry to show no issues.
+</Tip>
+
+### Steps
+
+**1. Clone the repository**
+
+```bash
+git clone https://github.com/Chika0221/MC-hub.git
+cd MC-hub
+```
+
+**2. Install dependencies**
+
+```bash
+flutter pub get
+```
+
+**3. Configure Firebase**
+
+SwitchPalette requires a Firebase project for infrared remote code storage and Gemini AI integration. Before running, complete the Firebase setup to generate the `lib/firebase_options.dart` file.
+
+See [Firebase Setup](/configuration/firebase-setup) for the full configuration steps.
+
+**4. Run in debug mode**
+
+```bash
+flutter run -d windows
+```
+
+**5. Build a release executable**
+
+```bash
+flutter build windows
+```
+
+The compiled application is written to `build\windows\x64\runner\Release\`.
+
+### Code generation
+
+Some data models use `freezed` and `json_serializable` for code generation. If you modify model files, regenerate the derived code with:
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+## Firebase setup
+
+SwitchPalette uses Firebase for two features:
+
+- **Infrared remote (Beam)** — IR codes are stored in and synced from Cloud Firestore
+- **AI text transformation** — Gemini AI is accessed via `firebase_ai`
+
+Without Firebase configured, these features will not function. Keyboard customization and local macros (text, combo, app launch) work without Firebase.
+
+See [Firebase Setup](/configuration/firebase-setup) for step-by-step instructions on creating a Firebase project and connecting it to SwitchPalette.

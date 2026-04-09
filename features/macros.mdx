@@ -1,0 +1,165 @@
+---
+title: "Macros"
+description: "Bind powerful actions—IR signals, key combos, app launches, text paste, and AI text transformations—to M1–M12 keys on your keyboard."
+---
+
+Macros let you assign complex actions to dedicated macro keys (M1–M12) on your keyboard. When you press a macro key, SwitchPalette intercepts the keycode and executes the configured action on your PC without any additional input.
+
+## Macro keys (M1–M12)
+
+SwitchPalette listens for a set of reserved keycodes called `MonitorKeycodes`. These map directly to virtual key codes in the range `0x7C`–`0x87`:
+
+```dart
+enum MonitorKeycodes {
+  macro1(0x7C, "M1"),
+  macro2(0x7D, "M2"),
+  macro3(0x7E, "M3"),
+  macro4(0x7F, "M4"),
+  macro5(0x80, "M5"),
+  macro6(0x81, "M6"),
+  macro7(0x82, "M7"),
+  macro8(0x83, "M8"),
+  macro9(0x84, "M9"),
+  macro10(0x85, "M10"),
+  macro11(0x86, "M11"),
+  macro12(0x87, "M12"),
+}
+```
+
+When the app detects one of these keycodes, it looks up the `Macro` object stored for that key and dispatches the appropriate action via `MacroService.runMacroByKeycode`.
+
+## Macro model
+
+Every macro is represented by a single `Macro` object. Fields that are not relevant to a macro type are left `null`:
+
+```dart
+class Macro {
+  final String name;
+  final MacroType type;
+  final String? docId;       // infrared: Firestore document ID
+  final List<int>? keys;     // combo: list of virtual key codes
+  final String? appPath;     // openApp: executable path
+  final String? aiPrompt;    // aiTextConvert: instruction sent to Gemini
+  final String? text;        // text: string to paste
+}
+```
+
+## Macro types
+
+<Tabs>
+  <Tab title="Beam (infrared)">
+    Sends an infrared signal by toggling a Firestore document's `state` field to `true`. A physical IR blaster device monitors Firestore and transmits the corresponding IR code when it detects the state change.
+
+    **Required field:** `docId` — the Firestore document ID of the target `InfraredCode`.
+
+    ```dart
+    case MacroType.infrared:
+      final inCode = await firebaseNotifier.getCode(macro.docId!);
+      final updateCode = inCode.copyWith(state: true);
+      await firebaseNotifier.updateCodes(updateCode);
+    ```
+
+    <Note>
+      This macro type requires Firebase to be configured. See [Firebase Setup](/configuration/firebase-setup) for instructions.
+    </Note>
+  </Tab>
+  <Tab title="Combo">
+    Simulates pressing multiple keys simultaneously using Windows virtual key codes. Useful for keyboard shortcuts such as `Ctrl+Shift+Esc` or custom hotkeys.
+
+    **Required field:** `keys` — an ordered list of virtual key code integers.
+
+    ```dart
+    case MacroType.combo:
+      KeySender.sendMultiKeyPush(macro.keys!, true);
+    ```
+
+    Key codes are drawn from the `VirtualKeyCode` enum defined in `virtual_key_codes.dart`. If the key press fails (e.g. the target window is not focused), a system notification is shown.
+  </Tab>
+  <Tab title="App (openApp)">
+    Launches an application by its executable path using PowerShell's `Start-Process` command.
+
+    **Required field:** `appPath` — the full path to the `.exe` or any file that Windows can open.
+
+    ```dart
+    case MacroType.openApp:
+      await Process.run("powershell", ["start", "\"${macro.appPath}\""],
+          runInShell: true);
+    ```
+
+    Apps available for assignment are loaded from the registered app list via `openAppProvider`. You can add apps through the settings UI.
+  </Tab>
+  <Tab title="Text">
+    Pastes a predefined string at the current cursor position. The text is written to the system clipboard, then `Ctrl+V` is sent via virtual key injection.
+
+    **Required field:** `text` — the string to paste.
+
+    ```dart
+    case MacroType.text:
+      await Clipboard.setData(ClipboardData(text: macro.text!));
+      KeySender.sendMultiKeyPush([
+        VirtualKeyCode.leftControl.vkCode,
+        VirtualKeyCode.keyV.vkCode,
+      ], true);
+    ```
+
+    <Tip>
+      This type is useful for boilerplate text, email signatures, code snippets, or any static string you type repeatedly.
+    </Tip>
+  </Tab>
+  <Tab title="AI (aiTextConvert)">
+    Copies the currently selected text, sends it to Gemini AI with a custom instruction, and pastes the transformed result back in place.
+
+    **Required field:** `aiPrompt` — the instruction given to Gemini (e.g. "summarize in bullet points" or "translate to English").
+
+    ```dart
+    case MacroType.aiTextConvert:
+      // 1. Copy selected text
+      KeySender.sendMultiKeyPush([leftControl.vkCode, keyC.vkCode]);
+      await Future.delayed(const Duration(milliseconds: 100));
+      final clipboardText = await Clipboard.getData('text/plain');
+
+      // 2. Send to Gemini
+      final model = FirebaseAI.googleAI().generativeModel(
+        model: promptProfile.model,
+      );
+      final response = await model.generateContent(
+        [Content.text(promptProfile.prompt)],
+      );
+
+      // 3. Paste the result
+      await Clipboard.setData(ClipboardData(text: response.text!));
+      KeySender.sendMultiKeyPush([leftControl.vkCode, keyV.vkCode]);
+    ```
+
+    <Warning>
+      If no text is selected when the key is pressed, the macro fails gracefully and shows a notification asking you to select text first.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Assigning a macro to a keyboard key
+
+<Steps>
+  <Step title="Open the keyboard editor">
+    Navigate to the editor page. Your connected keyboard is displayed visually with the current layer's keycodes.
+  </Step>
+  <Step title="Select the Macro tab in the palette">
+    In the key palette at the bottom of the screen, switch to the **Macro** tab. You will see keys labelled M1 through M12.
+  </Step>
+  <Step title="Drag or click a macro key onto the keyboard">
+    Click a target key on the visual layout, then click an M-key from the palette. The editor writes the `MonitorKeycode` value for that slot to the keyboard via `VialService.setKey`.
+  </Step>
+  <Step title="Configure the macro action">
+    Click the M-key on the visual layout to open the macro settings dialog. The dialog presents sections for each macro type: **IR remote** (Beam), **App launch**, **Combo / Text**, and **AI text convert**.
+  </Step>
+  <Step title="Select a macro type and fill in the details">
+    Choose one type by selecting the appropriate item or toggling the chip for that type. Only one type can be active per key slot. Tap **Apply** to save.
+  </Step>
+  <Step title="Test the macro">
+    Use the **Test** button in the dialog header to run the macro immediately from within the app, without pressing the physical key.
+  </Step>
+</Steps>
+
+<Info>
+Macro configurations are persisted locally using `AppPreferences`. They survive app restarts and do not require the keyboard to be connected to load.
+</Info>

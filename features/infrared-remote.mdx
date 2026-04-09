@@ -1,0 +1,116 @@
+---
+title: "Infrared Remote (Beam)"
+description: "Manage cloud-synced IR codes in Firestore and send them to any device your IR blaster can reach—directly from a keyboard key or workflow."
+---
+
+Beam is SwitchPalette's infrared remote control system. It stores IR signal codes in Firebase Firestore and signals a physical IR blaster to transmit them by toggling a document field. This architecture means you can trigger IR signals from any device with network access, including from keyboard macro keys.
+
+## How Beam works
+
+```
+Keyboard key (M1–M12)
+        │
+        ▼
+MacroService (infrared type)
+        │
+        ▼
+Firestore: codes/{docId}  ──►  state: true
+        │
+        ▼
+IR blaster device (monitors Firestore)
+        │
+        ▼
+IR signal transmitted to target device
+```
+
+The PC-side app never communicates directly with the IR blaster. Instead, it writes `state: true` to a Firestore document in the `codes` collection. The IR blaster (a separate microcontroller or device) listens to Firestore in real time and transmits the IR code stored in that document when it detects the state flip.
+
+## InfraredCode model
+
+Each IR code is a single Firestore document represented by the `InfraredCode` model:
+
+```dart
+class InfraredCode {
+  final String name;   // human-readable label shown in the UI
+  final String code;   // raw IR code string read/stored by the blaster
+  final bool state;    // true = "transmit now"; reset to false after transmission
+}
+```
+
+Documents are stored in the `codes` Firestore collection. The document ID (`docId`) is what infrared macros use to target a specific code.
+
+## Registering a new IR code
+
+<Steps>
+  <Step title="Open the Beam settings page">
+    Navigate to the Beam section in the settings. The page lists all registered IR codes fetched from the `codes` Firestore collection via `firebaseCodesStreamProvider`.
+  </Step>
+  <Step title="Tap the add button">
+    Tap the **+** floating action button to open the **New Code Register** dialog.
+  </Step>
+  <Step title="Enter a name for the code">
+    Type a descriptive name for the IR code (e.g. "TV Power", "AC Cool 24°C"). The name is required before you can proceed.
+  </Step>
+  <Step title="Start listening for the IR signal">
+    Tap **Start scanning**. This creates an `UnregisteredCode` document in Firestore with the entered name. The IR blaster device detects this document and enters learning mode, waiting to receive an IR signal.
+  </Step>
+  <Step title="Point your remote and press a button">
+    Aim your existing remote control at the IR blaster and press the button you want to register. The blaster captures the signal and writes the raw code back to Firestore.
+  </Step>
+  <Step title="Confirmation">
+    The dialog monitors the `UnregisteredCode` document's `state` field. When the state transitions to `CodeRegisteredState.done`, registration is complete and the dialog closes automatically. The new code appears in the Beam code list.
+  </Step>
+</Steps>
+
+## Sending an IR signal manually
+
+From the Beam settings page, tap any registered code in the grid to send it immediately. This calls `updateCodes` with `state: true` on that document:
+
+```dart
+onPressed: () async {
+  await ref
+    .read(firebaseCodesStreamProvider.notifier)
+    .updateCodes(infraredCodes[index].copyWith(state: true));
+},
+```
+
+The IR blaster detects the state change, transmits the code, and resets `state` to `false`.
+
+## Firestore operations
+
+`FirebaseCodesStreamNotifier` handles all Firestore interactions for the `codes` collection:
+
+| Method | Description |
+|--------|-------------|
+| `build()` | Returns a real-time stream of all `InfraredCode` documents. |
+| `updateCodes(code)` | Updates a document by name (sets `state: true` to trigger transmission). |
+| `getCode(docId)` | Fetches a single document by its Firestore document ID. |
+| `getDocIdByName(name)` | Looks up a document ID by the code's display name. |
+| `deleteCode(code)` | Removes a code document from Firestore. |
+
+## Connection to macros
+
+The `infrared` macro type links a keyboard key to a specific Beam code via its Firestore document ID:
+
+```dart
+// Stored in the Macro object
+Macro(
+  name: "TV Power",
+  type: MacroType.infrared,
+  docId: "abc123xyz",   // Firestore document ID from getDocIdByName()
+)
+
+// Executed when the key is pressed
+final inCode = await firebaseNotifier.getCode(macro.docId!);
+await firebaseNotifier.updateCodes(inCode.copyWith(state: true));
+```
+
+When you assign a Beam code to a macro key in the editor, `getDocIdByName` resolves the human-readable name to its Firestore document ID, which is then persisted in the `Macro` object. The name displayed in the UI is stored in `macro.name`; the `docId` is what is used at runtime to write to the correct document.
+
+<Note>
+Firebase must be configured before you can use any Beam features. See [Firebase Setup](/configuration/firebase-setup) for step-by-step instructions.
+</Note>
+
+<Warning>
+Beam relies on Firestore real-time listeners. If the IR blaster device loses its network connection, signals sent from the app will update Firestore but will not be transmitted until the device reconnects.
+</Warning>

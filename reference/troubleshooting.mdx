@@ -1,0 +1,232 @@
+---
+title: 'Troubleshooting'
+description: 'Diagnosis and fixes for common SwitchPalette problems: keyboard detection, keymap saving, macro execution, Firebase connectivity, AI text conversion, tray icon, and build issues.'
+---
+
+## Keyboard not detected
+
+<AccordionGroup>
+
+  <Accordion title="The device selection page shows no keyboards">
+    SwitchPalette only lists devices whose VID, PID, usage page, and usage match an entry in `list_of_mydevices.dart`. If no device appears:
+
+    <Steps>
+      <Step title="Verify Vial firmware">
+        Confirm the keyboard is flashed with Vial-compatible firmware. Standard QMK does not expose the Raw HID interface (`0xFF60` / `0x61`) that SwitchPalette expects.
+      </Step>
+      <Step title="Check the USB connection">
+        Try a different USB port or cable. Disconnect and reconnect the keyboard. Some USB hubs can block HID raw access.
+      </Step>
+      <Step title="Confirm the device IDs">
+        Use a HID inspector tool to read the keyboard's Vendor ID, Product ID, usage page, and usage. Compare them with the `MyDevice` entry in `list_of_mydevices.dart`. The values must match exactly.
+      </Step>
+      <Step title="Run as administrator">
+        On some Windows configurations, raw HID access requires elevated privileges. Try running SwitchPalette as administrator.
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="The keyboard appears in the list but connection fails">
+    `VialService.connect()` first tries to match all four HID fields (VID, PID, usage page, usage). If that fails it retries with VID and PID only. If both attempts fail, `connect()` returns `false` and `VialState.statusMessage` is set to `"Failed to connect"`.
+
+    - Make sure no other software (Vial desktop app, QMK Toolbox, etc.) has the HID interface open. Only one application can hold the HID handle at a time.
+    - Disconnect and reconnect the keyboard, then try again.
+    - Check the app's status message displayed on the device selection page for more detail.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Keymap not saving
+
+<AccordionGroup>
+
+  <Accordion title="Key assignments are lost after disconnecting">
+    Keymap writes go directly to the keyboard's flash via `dynamicKeymapSetBuffer` (command `0x13`). If changes are not persisting:
+
+    - Confirm the keyboard is still connected during the write. Check `VialState.isConnected`.
+    - Look at `VialState.statusMessage` — a message like `"Failed to write: ..."` indicates the USB write failed.
+    - Some Vial firmware versions require a small delay between rapid writes. Try changing one key at a time and waiting for the status message to update.
+  </Accordion>
+
+  <Accordion title="The keymap editor shows incorrect labels">
+    Labels are decoded by `VialKey.labelFromCode()`. If a keycode value is not present in the `VialKey` enum it falls back to the hex representation (e.g. `"0x3A00"`). This is expected for keycodes not yet mapped in the enum; it does not indicate a write error.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Macro not executing
+
+<AccordionGroup>
+
+  <Accordion title="Pressing M1–M12 does nothing">
+    The macro key monitor listens for virtual key codes `0x7C`–`0x87` (F13–F24). Check the following:
+
+    - The physical key on your keyboard must be programmed to send one of the M1–M12 Vial key codes (`0x6800`–`0x7300`) in the keymap editor.
+    - A macro must be assigned to that M-key slot in the app. If no macro is assigned, a Windows notification appears: "マクロが登録されていません".
+    - `KeyboardMonitor` runs in a separate Dart isolate. Verify the app has not crashed in the background by checking Windows Task Manager.
+  </Accordion>
+
+  <Accordion title="Macro runs but no text is typed (combo or text macro)">
+    `KeySender.sendMultiKeyPush()` uses the Win32 `SendInput` API. This can fail silently if:
+
+    - The target window has `UIPI` (User Interface Privilege Isolation) blocking synthetic input from a lower-privilege process. Run SwitchPalette as administrator.
+    - The focused window does not accept keyboard input (e.g. UAC prompt, certain game windows).
+  </Accordion>
+
+  <Accordion title="App launch macro does nothing">
+    The `openApp` macro type runs `powershell start "<appPath>"`. Check that:
+
+    - `macro.appPath` is set to a valid absolute path to an `.exe` file.
+    - The path does not contain characters that break the PowerShell command. Paths with spaces are automatically quoted in the call.
+    - Check the console output for `Exit Code` and `stderr` messages logged by `MacroService`.
+  </Accordion>
+
+  <Accordion title="Windows notifications for macro results are not appearing">
+    Notifications are sent via `windows_notification`. If they do not appear:
+
+    - Open Windows **Settings → System → Notifications** and verify that notifications are enabled for SwitchPalette (or for all apps).
+    - Check **Focus Assist / Do Not Disturb** settings — these can suppress all toast notifications.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Firebase connection issues
+
+<AccordionGroup>
+
+  <Accordion title="Firestore data does not load; app shows errors">
+    <Steps>
+      <Step title="Verify Firebase configuration files">
+        SwitchPalette is a Windows desktop application. It requires `lib/firebase_options.dart` (generated by FlutterFire CLI) — not `google-services.json`, which is Android-only. Run `flutterfire configure --project=YOUR_PROJECT_ID` to regenerate if needed.
+      </Step>
+      <Step title="Check Firestore security rules">
+        The `codes` and `workflows` collections must be readable and writable by the authenticated user (or allow unauthenticated access if that is your project's configuration). Open the Firebase console and review the Firestore rules.
+      </Step>
+      <Step title="Check network connectivity">
+        SwitchPalette's Firestore providers use real-time snapshots. A firewall or VPN blocking outbound HTTPS to `firestore.googleapis.com` will prevent connection.
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="Infrared macro triggers but the device does not respond">
+    The `infrared` macro sets `state: true` on the Firestore document. If the Beam hardware device does not react:
+
+    - Open the Firebase console and confirm the document's `state` field actually changed to `true`.
+    - Verify the Beam hardware is powered on and connected to Firebase with the same project credentials.
+    - Check that `macro.docId` matches the actual Firestore document ID of the target code.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## AI text conversion failing
+
+<AccordionGroup>
+
+  <Accordion title="AI macro shows 'テキストを選択してください' (select text first)">
+    The `aiTextConvert` macro works by simulating Ctrl+C and reading the clipboard. If the notification says to select text first:
+
+    - Ensure text is selected in the focused application before pressing the macro key.
+    - Allow approximately 100 ms for the clipboard to populate after Ctrl+C. If your system is slow, the delay in `MacroService` may need to be increased.
+  </Accordion>
+
+  <Accordion title="AI macro shows 'AIの応答が空です' (empty AI response)">
+    The Gemini model returned a null or empty `response.text`. This can happen when:
+
+    - The prompt or input text triggered a safety filter.
+    - The Firebase AI quota for your project is exhausted.
+    - The `model` name in the prompt profile configuration does not match an available Gemini model in your region.
+
+    Check the Firebase console's AI usage logs for error details.
+  </Accordion>
+
+  <Accordion title="Firebase AI is not initialised">
+    Firebase AI requires `firebase_ai` to be initialised as part of the Firebase app startup. Ensure `Firebase.initializeApp()` is called with the correct `FirebaseOptions` before any AI macro is triggered. Also confirm that the **Vertex AI for Firebase** or **Gemini Developer API** is enabled in your Firebase project console.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## App not appearing in system tray
+
+<AccordionGroup>
+
+  <Accordion title="The tray icon is not visible after launch">
+    Windows can hide tray icons in the overflow area ("hidden icons" arrow near the clock).
+
+    <Steps>
+      <Step title="Check the overflow area">
+        Click the up-arrow (^) on the right side of the taskbar to see hidden tray icons. SwitchPalette's icon may be there.
+      </Step>
+      <Step title="Pin the icon to the taskbar">
+        Right-click the taskbar, open **Taskbar settings → Other system tray icons**, and enable SwitchPalette so its icon is always visible.
+      </Step>
+      <Step title="Verify the icon asset">
+        The tray icon is loaded from `assets/icons/tray_icon.ico`. If this asset is missing from the build, `tray_manager` will fail silently. Confirm the asset is listed in `pubspec.yaml` under `flutter.assets`.
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="Clicking the tray icon does not open the window">
+    The tray context menu is shown on mouse-down (`onTrayIconMouseDown`). Select **"SwitchPaletteを開く"** from the context menu to restore the window. If the menu does not appear, try right-clicking the icon instead.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Build issues
+
+<AccordionGroup>
+
+  <Accordion title="Build fails after cloning or pulling">
+    <Steps>
+      <Step title="Restore dependencies">
+        ```bash
+        flutter pub get
+        ```
+      </Step>
+      <Step title="Regenerate code-generated files">
+        `freezed` and `json_serializable` require a build step. Run:
+        ```bash
+        dart run build_runner build --delete-conflicting-outputs
+        ```
+      </Step>
+      <Step title="Verify Flutter SDK version">
+        The project requires `sdk: '>=3.7.2'` (as declared in `pubspec.yaml`). Run `flutter --version` and upgrade if needed:
+        ```bash
+        flutter upgrade
+        ```
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="win32 / ffi compilation errors on non-Windows platforms">
+    <Warning>
+      SwitchPalette targets **Windows only**. Packages including `win32`, `ffi`, and `hid4flutter` will not compile on macOS or Linux. Always build and run with `flutter run -d windows`.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Missing generated .freezed.dart or .g.dart files">
+    These files are produced by `build_runner` and are not checked into version control. If they are absent, the project will fail to compile with errors such as `Undefined class '_$Macro'`. Run the build runner command:
+
+    ```bash
+    dart run build_runner build --delete-conflicting-outputs
+    ```
+
+    If you are actively developing models and want continuous regeneration, use:
+
+    ```bash
+    dart run build_runner watch --delete-conflicting-outputs
+    ```
+  </Accordion>
+
+</AccordionGroup>

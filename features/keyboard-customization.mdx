@@ -1,0 +1,115 @@
+---
+title: "Keyboard Customization"
+description: "Remap keys across multiple layers on your Vial-compatible keyboard using SwitchPalette's real-time visual editor."
+---
+
+SwitchPalette connects to Vial-compatible keyboards over USB HID and lets you remap every key on every layer without flashing firmware. Changes are written directly to the keyboard's dynamic keymap buffer and take effect immediately.
+
+## How auto-detection works
+
+When you launch SwitchPalette, it enumerates all HID devices attached to the system using the `hid4flutter` package. It then matches each device against the registered device list by comparing `vendorId`, `productId`, `usagePage`, and `usage` values. If an exact four-field match is not found, it falls back to matching on `vendorId` and `productId` alone.
+
+```dart
+// VialService.connect — simplified
+_device = devices.firstWhere(
+  (d) =>
+    d.vendorId == device.vendorId &&
+    d.productId == device.productId &&
+    d.usagePage == device.usagePage &&
+    d.usage == device.usage,
+);
+```
+
+Once a match is found, the device is opened and its keymap is fetched. The connection state is exposed through `VialState`:
+
+```dart
+class VialState {
+  final bool isConnected;
+  final String? deviceName;
+  final String? statusMessage;
+  final Map<String, String> keyMappings;
+  final List<List<List<int>>>? matrix; // [layer][row][col] = keycode
+}
+```
+
+## Supported keyboards
+
+| Keyboard     | Vendor ID | Product ID | Layers | Rows | Cols |
+|--------------|-----------|------------|--------|------|------|
+| MCKeyboard   | `0xFEED`  | `0x6D63`   | 4      | 4    | 14   |
+
+Additional keyboards can be registered by adding entries to `myDevices` and `deviceLayouts` in `list_of_mydevices.dart`.
+
+## Multi-layer keymap
+
+Each keyboard stores up to N independent layers (MCKeyboard uses 4 layers, numbered 0–3). `VialService.getKeymap` reads the full keymap buffer from the device and decodes it into a three-dimensional matrix:
+
+```dart
+Future<List<List<List<int>>>> getKeymap({
+  required int layers,
+  required int rows,
+  required int cols,
+}) async { ... }
+```
+
+The editor displays one layer at a time. The layer selector panel on the left side of the editor shows buttons labelled **0**, **1**, **2**, and **3**. Tapping a button switches the visual layout to show the keycodes stored in that layer.
+
+<Note>
+Layer switching only changes what is displayed. Your keyboard's active layer is still determined by the layer-momentary (`MO`) keys you hold while typing.
+</Note>
+
+## Visual layout rendering
+
+The editor page (`EditorPage`) composes three widgets:
+
+- **`LayerButtons`** — a vertical pill on the left with one button per layer.
+- **`KeyboardLayout`** — renders each key as a `KeyUnit` widget at the correct physical width. Key widths are defined per-key in `KeyData` (e.g. `Backspace` is `2.0u`, `Space` is `6.25u`).
+- **`KeyPalette`** — a tabbed panel at the bottom containing all assignable keycodes, organized into **Basic**, **Media**, **Macro**, and **Layer** tabs.
+
+Layout positions are defined in `deviceVisualLayouts`, which maps each key to a `"row,col"` identifier such as `"1,3"`. The editor reads the live keycode from the matrix for each position and converts it to a label using `VialNotifier.keycodeToLabel`.
+
+## How to remap a key
+
+<Steps>
+  <Step title="Connect your keyboard">
+    Plug in your Vial-compatible keyboard via USB. SwitchPalette detects it automatically by matching the device's VID/PID. The device name appears in the app bar once connected.
+  </Step>
+  <Step title="Select a layer">
+    Use the numbered layer buttons (0–3) on the left side of the editor to choose the layer you want to edit. The visual layout updates immediately to show the keycodes stored on that layer.
+  </Step>
+  <Step title="Choose a key to remap">
+    Click any key on the visual keyboard layout. The key becomes the active remap target.
+  </Step>
+  <Step title="Pick a new keycode from the palette">
+    In the palette at the bottom, browse the **Basic**, **Media**, **Macro**, or **Layer** tab and click the keycode you want to assign. Macro keys (M1–M12) are listed in the **Macro** tab.
+  </Step>
+  <Step title="Confirm the mapping">
+    The new keycode is written to the keyboard immediately via `VialService.setKey`, which calculates the correct buffer offset and sends the two-byte keycode to the device:
+
+    ```dart
+    Future<void> setKey(
+      int layer,
+      int row,
+      int col,
+      int keycode,
+      int totalRows,
+      int totalCols,
+    ) async {
+      final offset =
+        (layer * totalRows * totalCols * 2) +
+        (row * totalCols * 2) +
+        (col * 2);
+      final data = Uint8List(2);
+      data[0] = keycode & 0xFF;
+      data[1] = (keycode >> 8) & 0xFF;
+      await dynamicKeymapSetBuffer(offset, data);
+    }
+    ```
+
+    A snackbar confirms the mapping was applied. No firmware flash or reboot is required.
+  </Step>
+</Steps>
+
+<Tip>
+To assign a macro action to a key, switch to the **Macro** tab in the palette and select one of the M1–M12 keys. Then configure what that macro does from the macro settings dialog.
+</Tip>

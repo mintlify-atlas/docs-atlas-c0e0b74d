@@ -1,0 +1,165 @@
+---
+title: "Settings Page"
+description: "The three settings sub-sections: Beam infrared remote management, Workflow automation builder, and Remote Control (in development)."
+---
+
+The Settings Page is accessible from the navigation rail on the left side of the main window. Click the **Settings** icon (the `settings_ethernet` icon) to switch from the Device Selection view to the settings area.
+
+The navigation rail's trailing section shows three icon buttons when Settings is selected. Each button switches between one of three sub-sections:
+
+<CardGroup cols={3}>
+  <Card title="Beam" icon="satellite-dish">
+    Manage infrared remote codes. Add new codes by pointing a remote at the receiver, then trigger signals directly from the app or by pressing a mapped macro key. See [Infrared Remote](/features/infrared-remote) for technical details.
+  </Card>
+  <Card title="Workflow" icon="share-nodes">
+    Build and manage automation workflows that run when a key is pressed or on a timer. Each workflow is a graph of action blocks connected by paths. See [Workflows](/features/workflows) for technical details.
+  </Card>
+  <Card title="Remote Control" icon="gamepad">
+    A future remote control UI. This sub-section is currently a placeholder — it displays only the text "Remocon Page" and has no interactive elements yet.
+  </Card>
+</CardGroup>
+
+The sub-section label (`REMOCON`, `WORKFLOW`, or `CONTROL`) is displayed vertically in the trailing section of the navigation rail, animated with a slide-in effect when you switch between sections.
+
+---
+
+## Beam settings
+
+The **Beam** sub-section (index 2 in the settings stack) lists all infrared codes you have registered. It uses a Rive animated background matching the Device Selection screen.
+
+### Layout
+
+- A centered heading **リモコン一覧** (Remote code list) at the top.
+- A scrollable grid of code cards below.
+- A floating action button (`+`) in the bottom-right corner to register a new code.
+
+### Code cards
+
+Each registered code is shown as a `CodeContainer` row with:
+
+- The code's **name** (large text).
+- The raw **IR code string** (body text).
+- A **play button** that immediately transmits the signal by updating the code's `state` field to `true` in Firebase.
+
+Tapping the name area opens a detail dialog showing the full code string, with options to **delete** the code or **close** the dialog.
+
+### Registering a new code
+
+Click the `+` floating action button to open the **New Code Register** dialog. The dialog uses a two-step stepper:
+
+<Steps>
+  <Step title="Enter a name">
+    Type a descriptive name for the IR code (e.g. "TV power" or "Air con 25°C"). The name is required — you cannot advance without it.
+  </Step>
+  <Step title="Capture the code">
+    Click **リモコンのコードの検索を始める** (Start scanning for remote code). Point your remote control at the IR receiver connected to the system and press the button you want to register. The app listens for an incoming code via Firebase and displays an animation while waiting. When the code is received and saved, the dialog closes automatically.
+  </Step>
+</Steps>
+
+<Note>
+The IR capture step relies on a connected hardware IR receiver and the Firebase backend. Ensure the receiver is plugged in and Firebase is configured before registering new codes. See [Firebase setup](/configuration/firebase-setup) for details.
+</Note>
+
+---
+
+## Workflow settings
+
+The **Workflow** sub-section (index 1 in the settings stack) lists all automation workflows stored in Firebase.
+
+### Layout
+
+- A centered heading **ワークフロー一覧** (Workflow list) at the top.
+- A scrollable grid of workflow cards below.
+- A floating action button (`+`) in the bottom-right corner to create a new workflow.
+
+### Workflow cards
+
+Each workflow is displayed as a `WorkflowContainer` row showing:
+
+- The workflow's **display name**.
+- The **trigger type** and **action count** as a subtitle (e.g. `TimeBased トリガー | アクション数: 3`).
+- A **play button** for workflows that do not use a time-based trigger — clicking it runs the workflow immediately via `WorkflowService.runWorkflow`.
+
+The card background changes to the theme's secondary color when the workflow is active (`state == true`).
+
+Right-clicking a card opens a context menu with a **Delete** option that removes the workflow from Firebase.
+
+Tapping the card body opens the **Workflow Edit Page** for that workflow. When the edit page closes, any changes are saved back to Firebase.
+
+### Creating a new workflow
+
+Click the `+` floating action button. A confirmation dialog asks whether you want to create a new workflow. Click **作成** (Create) to open a blank **Workflow Edit Page**.
+
+---
+
+## Workflow edit page
+
+The Workflow Edit Page is a full-screen node editor for building the action graph of a single workflow.
+
+### Layout
+
+The page contains three overlapping elements rendered in a `Stack`:
+
+- **`WorkflowBoard`** — the main canvas (fills the entire page).
+- **`WorkflowNameContainer`** — a floating name field pinned to the top-left.
+- **`SelectWorkflowContainer`** — a collapsible action palette pinned to the right edge.
+
+### WorkflowBoard
+
+The board is an `InteractiveViewer` wrapping a 3000 × 3000 px canvas. You can pan and zoom freely (scale range: 0.1× to 4.0×). The background uses a dot grid pattern for visual reference.
+
+Action blocks are positioned absolutely on the canvas using `positionX` / `positionY` coordinates. Connector lines (`WorkflowPath`) are drawn between blocks that reference each other via `nextActionIds`.
+
+**Adding an action block:**
+
+Drag an action type from the **SelectWorkflowContainer** panel on the right and drop it anywhere on the canvas. The block is placed at the drop position.
+
+**Connecting blocks:**
+
+Each block has a small circular **output anchor** on its right edge. Drag from the output anchor of one block and release near the **input anchor** on the left edge of another block. If the drop lands within 40 px of a target block's input anchor, a connection is created.
+
+**Moving a block:**
+
+Drag an existing block to reposition it on the canvas. The connector lines update automatically.
+
+**Deleting a block:**
+
+Right-click a block to open its context menu and select **Delete**.
+
+### Action types
+
+| Type | Color | Description |
+|------|-------|-------------|
+| **Start** | Primary | The entry point of the workflow. Every workflow begins here. |
+| **End** | Primary | Marks the end of the execution path. |
+| **Macro** | Secondary | Executes a macro action (IR signal, app launch, text combo, or AI text conversion). |
+| **Delay** | Tertiary | Pauses execution for a configurable duration. |
+| **Notification** | Tertiary | Displays a system notification with a configurable message. |
+
+### WorkflowNameContainer
+
+A floating container in the top-left corner contains:
+
+- A **back arrow** button that saves the workflow and returns to the Workflow list page.
+- A **text field** for editing the workflow's display name. Changes are applied live to the provider.
+
+### SelectWorkflowContainer
+
+A collapsible panel on the right edge lists all available action types as draggable `WorkflowActionBox` tiles. Click the **close/expand** button at the bottom of the panel to toggle its width between 380 px (expanded) and 120 px (collapsed).
+
+---
+
+## Task tray behavior
+
+When you close the SwitchPalette main window, the app minimizes to the Windows system tray instead of exiting. It continues running in the background to monitor key presses and execute any macro or workflow assigned to those keys.
+
+The tray icon provides a context menu:
+
+| Option | Action |
+|--------|--------|
+| **SwitchPaletteを開く** | Restores the main window. |
+| **閉じる** | Exits the application completely. |
+
+<Tip>
+To ensure macros and workflows run reliably, leave SwitchPalette running in the system tray while you work. You do not need the main window open.
+</Tip>

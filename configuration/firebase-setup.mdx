@@ -1,0 +1,159 @@
+---
+title: "Firebase Setup"
+description: "Connect SwitchPalette to Firebase to enable IR code storage with Cloud Firestore and AI-powered text conversion with Firebase AI."
+---
+
+SwitchPalette uses Firebase for two distinct features:
+
+- **Cloud Firestore** — stores and streams infrared (IR) codes in real time. When you trigger an IR macro from your keyboard, the app writes a state change to Firestore, which a listening device (such as an IR blaster) picks up and executes.
+- **Firebase AI (Gemini)** — powers the AI Text Conversion macro type. The app calls the Gemini API through Firebase AI, so no separate API key management is required.
+
+Neither feature works without a connected Firebase project.
+
+<Note>
+  If you only use keyboard macros (combos, text input, app launch) and do not need IR remote or AI text conversion, you can skip this setup.
+</Note>
+
+## Create a Firebase project
+
+<Steps>
+  <Step title="Open the Firebase console">
+    Go to [console.firebase.google.com](https://console.firebase.google.com) and sign in with a Google account.
+  </Step>
+
+  <Step title="Add a new project">
+    Click **Add project**, enter a project name, and follow the prompts. You can disable Google Analytics if you do not need it.
+  </Step>
+
+  <Step title="Enable Cloud Firestore">
+    In the left sidebar, go to **Build → Firestore Database** and click **Create database**. Choose **Production mode** and select a region close to you.
+
+    <Warning>
+      In production mode, all reads and writes are denied by default. You must configure security rules before the app can read or write data.
+    </Warning>
+  </Step>
+
+  <Step title="Enable Firebase AI (Gemini API)">
+    In the left sidebar, go to **Build → Firebase AI Logic** (previously "Vertex AI in Firebase"). Follow the prompts to enable the Gemini API for your project. The app uses `FirebaseAI.googleAI().generativeModel()`, so select the **Google AI** backend when prompted.
+  </Step>
+</Steps>
+
+## Connect the Flutter app to Firebase
+
+<Steps>
+  <Step title="Install the FlutterFire CLI">
+    ```bash
+    dart pub global activate flutterfire_cli
+    ```
+  </Step>
+
+  <Step title="Configure the project">
+    Run the following command in the repository root. The CLI will detect your Flutter app and generate a `firebase_options.dart` file.
+
+    ```bash
+    flutterfire configure --project=YOUR_PROJECT_ID
+    ```
+
+    Select **Windows** as the platform (SwitchPalette is a Windows desktop application).
+  </Step>
+
+  <Step title="Verify the generated file">
+    Confirm that `lib/firebase_options.dart` was created. It contains the `DefaultFirebaseOptions` class used at app startup to initialize Firebase.
+
+    ```dart
+    // lib/main.dart (excerpt)
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    ```
+  </Step>
+
+  <Step title="Build and run">
+    ```bash
+    flutter run -d windows
+    ```
+
+    If Firebase initializes successfully, the app will connect to Firestore on launch.
+  </Step>
+</Steps>
+
+<Note>
+  The `google-services.json` file is for Android only. On Windows, FlutterFire generates `firebase_options.dart` instead. Do not add `google-services.json` to a Windows-only project.
+</Note>
+
+## Firestore data structure
+
+SwitchPalette uses three top-level collections.
+
+### `codes` — registered IR codes
+
+Each document in the `codes` collection represents a saved IR code that can be assigned to a macro.
+
+```json
+// codes/{documentId}
+{
+  "name": "TV Power",
+  "code": "3400...",
+  "state": false
+}
+```
+
+| Field   | Type    | Description                                                                                     |
+| ------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `name`  | string  | Human-readable label shown in the UI.                                                           |
+| `code`  | string  | The raw IR signal data transmitted by the IR blaster.                                           |
+| `state` | boolean | Set to `true` by the app when the macro fires; the IR blaster reads this and resets it to `false`. |
+
+The app streams this collection in real time via `firebaseCodesStreamProvider` and supports create, update, and delete operations.
+
+### `unregisteredCodes` — pending IR codes
+
+When an IR blaster receives an unrecognized signal (for example during a learning session), it writes a temporary document here. SwitchPalette reads the first document from this collection and presents it for registration.
+
+```json
+// unregisteredCodes/{documentId}
+{
+  "name": "",
+  "code": "3400..."
+}
+```
+
+### `workflows` — automation workflows
+
+The `workflows` collection stores multi-step automation sequences. Documents use a `displayName` field as the primary lookup key.
+
+```json
+// workflows/{documentId}
+{
+  "displayName": "Morning Routine"
+}
+```
+
+## Security rules
+
+The default production-mode rules deny all access. At minimum, allow the authenticated user (or your app's service account) to read and write the three collections.
+
+A simple starting point for development:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /codes/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /unregisteredCodes/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /workflows/{docId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+<Warning>
+  Do not use `allow read, write: if true;` in production. Always scope access to authenticated users or specific conditions appropriate for your deployment.
+</Warning>
+
+For more information on how IR codes are used at runtime, see [Infrared Remote](/features/infrared-remote).

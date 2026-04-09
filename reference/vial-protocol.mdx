@@ -1,0 +1,317 @@
+---
+title: 'Vial protocol'
+description: 'How SwitchPalette communicates with Vial-compatible keyboards over Raw HID: packet format, commands, keycode encoding, and the VID/PID device matching process.'
+---
+
+## What is Vial?
+
+[Vial](https://get.vial.today/) is an open-source keyboard firmware ecosystem built on top of QMK. It extends QMK with a Raw HID interface that allows host software to read and write the keyboard's keymap at runtime — without reflashing the firmware.
+
+SwitchPalette communicates with Vial keyboards using this Raw HID interface, implemented in `lib/infrastructure/hid/vial_service.dart`.
+
+## Raw HID packet format
+
+All communication uses fixed-size 32-byte packets. Each packet starts with a single command byte, followed by command-specific arguments and padding.
+
+```
+Byte 0    : command ID
+Byte 1–N  : arguments (command-dependent)
+Byte N+1… : zero padding to fill 32 bytes
+```
+
+Responses from the keyboard follow the same 32-byte structure, with the first byte echoing the command ID.
+
+<Note>
+  The `hid4flutter` package may prepend a report ID byte (byte 0 = `0x00`), making the raw buffer 33 bytes. `VialService.receiveRaw()` automatically strips this extra byte before returning the 32-byte payload.
+</Note>
+
+## Commands
+
+### `0x01` — getProtocolVersion
+
+Returns the Vial protocol version supported by the connected firmware.
+
+<ParamField body="command[0]" type="number" required default="0x01">
+  Command identifier. Must be `0x01`.
+</ParamField>
+
+**Response:** bytes 1–2 form a big-endian 16-bit version number.
+
+```dart
+Future<int> getProtocolVersion() async {
+  final command = Uint8List(32);
+  command[0] = 0x01;
+  await sendRaw(command);
+  final response = await receiveRaw();
+
+  if (response[0] != 0x01) {
+    throw Exception("Invalid response for protocol version");
+  }
+
+  return (response[1] << 8) | response[2];
+}
+```
+
+---
+
+### `0x12` — dynamicKeymapGetBuffer
+
+Reads a slice of the dynamic keymap buffer stored in the keyboard.
+
+<ParamField body="command[0]" type="number" required default="0x12">
+  Command identifier. Must be `0x12`.
+</ParamField>
+
+<ParamField body="command[1]" type="number" required>
+  High byte of the 16-bit buffer offset (big-endian).
+</ParamField>
+
+<ParamField body="command[2]" type="number" required>
+  Low byte of the 16-bit buffer offset.
+</ParamField>
+
+<ParamField body="command[3]" type="number" required>
+  Number of bytes to read. Maximum 28 (leaves room for the 4-byte header in the 32-byte packet).
+</ParamField>
+
+**Response:** bytes 4 through `4 + size - 1` contain the requested keymap data.
+
+```dart
+Future<Uint8List> dynamicKeymapGetBuffer(int offset, int size) async {
+  final command = Uint8List(32);
+  command[0] = 0x12;
+  command[1] = (offset >> 8) & 0xFF;
+  command[2] = offset & 0xFF;
+  command[3] = size;
+
+  await sendRaw(command);
+  final response = await receiveRaw();
+
+  if (response[0] != 0x12) {
+    throw Exception("Invalid response for dynamic keymap get buffer");
+  }
+
+  return response.sublist(4, 4 + size);
+}
+```
+
+---
+
+### `0x13` — dynamicKeymapSetBuffer
+
+Writes a slice of up to 28 bytes into the dynamic keymap buffer.
+
+<ParamField body="command[0]" type="number" required default="0x13">
+  Command identifier. Must be `0x13`.
+</ParamField>
+
+<ParamField body="command[1]" type="number" required>
+  High byte of the 16-bit buffer offset.
+</ParamField>
+
+<ParamField body="command[2]" type="number" required>
+  Low byte of the 16-bit buffer offset.
+</ParamField>
+
+<ParamField body="command[3]" type="number" required>
+  Number of bytes to write. Maximum 28.
+</ParamField>
+
+<ParamField body="command[4…]" type="number[]" required>
+  Data bytes to write, packed into positions 4 through `4 + length - 1`.
+</ParamField>
+
+```dart
+Future<void> dynamicKeymapSetBuffer(int offset, Uint8List data) async {
+  if (data.length > 28) {
+    throw Exception("Data too long for single packet");
+  }
+
+  final command = Uint8List(32);
+  command[0] = 0x13;
+  command[1] = (offset >> 8) & 0xFF;
+  command[2] = offset & 0xFF;
+  command[3] = data.length;
+
+  for (int i = 0; i < data.length; i++) {
+    command[4 + i] = data[i];
+  }
+
+  await sendRaw(command);
+}
+```
+
+## Keycode encoding
+
+The Vial keymap buffer stores one keycode per key position as **2 bytes in little-endian order**. Byte `n` holds the low byte; byte `n+1` holds the high byte.
+
+```
+buffer[ptr]     = keycode & 0xFF        // low byte
+buffer[ptr + 1] = (keycode >> 8) & 0xFF // high byte
+```
+
+When reading, SwitchPalette reconstructs the 16-bit keycode as:
+
+```dart
+final keycode = buffer[ptr] | (buffer[ptr + 1] << 8);
+```
+
+The project's own keycode table (`VialKey` enum in `vial_provider.dart`) maps these 16-bit values to human-readable labels. For example:
+
+| Label | Code |
+|---|---|
+| `No` | `0x0000` |
+| `A` | `0x0400` |
+| `Enter` | `0x2800` |
+| `Esc` | `0x2900` |
+| `LCtrl` | `0xE000` |
+| `M1` | `0x6800` |
+| `M12` | `0x7300` |
+
+## Reading the full keymap — `getKeymap()`
+
+`getKeymap()` reads the complete keymap for all layers by issuing repeated `dynamicKeymapGetBuffer` calls in 28-byte blocks.
+
+<ParamField body="layers" type="number" required>
+  Total number of keymap layers on the device (e.g. `4` for MCKeyboard).
+</ParamField>
+
+<ParamField body="rows" type="number" required>
+  Number of rows in the physical matrix (e.g. `4`).
+</ParamField>
+
+<ParamField body="cols" type="number" required>
+  Number of columns in the physical matrix (e.g. `14`).
+</ParamField>
+
+The total bytes to read is `layers × rows × cols × 2`. The result is a three-dimensional list indexed as `keymap[layer][row][col]`, where each value is the raw 16-bit keycode integer.
+
+```dart
+Future<List<List<List<int>>>> getKeymap({
+  required int layers,
+  required int rows,
+  required int cols,
+}) async {
+  final totalBytes = layers * rows * cols * 2;
+  final buffer = Uint8List(totalBytes);
+  const blockSize = 28;
+
+  for (int offset = 0; offset < totalBytes; offset += blockSize) {
+    int size = blockSize;
+    if (offset + size > totalBytes) {
+      size = totalBytes - offset;
+    }
+    final chunk = await dynamicKeymapGetBuffer(offset, size);
+    for (int i = 0; i < size; i++) {
+      buffer[offset + i] = chunk[i];
+    }
+  }
+
+  List<List<List<int>>> keymap = [];
+  int ptr = 0;
+
+  for (int l = 0; l < layers; l++) {
+    List<List<int>> layer = [];
+    for (int r = 0; r < rows; r++) {
+      List<int> row = [];
+      for (int c = 0; c < cols; c++) {
+        final keycode = buffer[ptr] | (buffer[ptr + 1] << 8);
+        row.add(keycode);
+        ptr += 2;
+      }
+      layer.add(row);
+    }
+    keymap.add(layer);
+  }
+  return keymap;
+}
+```
+
+## Writing a single key — `setKey()`
+
+`setKey()` calculates the byte offset for a given `layer / row / col` position and writes 2 bytes with `dynamicKeymapSetBuffer`.
+
+<ParamField body="layer" type="number" required>
+  Zero-indexed layer number.
+</ParamField>
+
+<ParamField body="row" type="number" required>
+  Zero-indexed row in the key matrix.
+</ParamField>
+
+<ParamField body="col" type="number" required>
+  Zero-indexed column in the key matrix.
+</ParamField>
+
+<ParamField body="keycode" type="number" required>
+  16-bit Vial keycode to assign.
+</ParamField>
+
+<ParamField body="totalRows" type="number" required>
+  Total row count of the device matrix.
+</ParamField>
+
+<ParamField body="totalCols" type="number" required>
+  Total column count of the device matrix.
+</ParamField>
+
+```dart
+Future<void> setKey(
+  int layer,
+  int row,
+  int col,
+  int keycode,
+  int totalRows,
+  int totalCols,
+) async {
+  final offset =
+      (layer * totalRows * totalCols * 2) + (row * totalCols * 2) + (col * 2);
+  final data = Uint8List(2);
+  data[0] = keycode & 0xFF;
+  data[1] = (keycode >> 8) & 0xFF;
+
+  await dynamicKeymapSetBuffer(offset, data);
+}
+```
+
+The offset formula:
+
+```
+offset = (layer × totalRows × totalCols × 2)
+       + (row   × totalCols × 2)
+       + (col   × 2)
+```
+
+## Device detection (VID/PID matching)
+
+Before any Vial communication can occur, the app must find the correct HID interface on the connected keyboard. Keyboards expose multiple HID interfaces (one for normal keyboard input, one for Raw HID). SwitchPalette identifies the right interface by matching four values:
+
+| Field | MCKeyboard value |
+|---|---|
+| Vendor ID (`vendorId`) | `0xFEED` |
+| Product ID (`productId`) | `0x6D63` |
+| Usage page (`usagePage`) | `0xFF60` |
+| Usage (`usage`) | `0x61` |
+
+`filterMyKeyboards()` in `hid_scripts.dart` filters the full device list returned by `Hid.getDevices()`:
+
+```dart
+List<HidDevice> filterMyKeyboards(List<HidDevice> devices) {
+  return devices
+      .where(
+        (device) => myDevices.any((myDevice) {
+          return device.vendorId == myDevice.vendorId &&
+              device.productId == myDevice.productId &&
+              device.usagePage == myDevice.usegePage &&
+              device.usage == myDevice.usege;
+        }),
+      )
+      .toList();
+}
+```
+
+`VialService.connect()` attempts the full four-field match first, then falls back to VID/PID-only matching if no interface with the exact usage page is found.
+
+<Tip>
+  To add support for a second keyboard, add a new `MyDevice` entry to `lib/infrastructure/hid/list_of_mydevices.dart` with the correct VID, PID, usage page, and usage value, along with the key layout definition.
+</Tip>

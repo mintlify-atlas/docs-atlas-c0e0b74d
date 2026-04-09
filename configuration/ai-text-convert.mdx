@@ -1,0 +1,156 @@
+---
+title: "AI Text Conversion"
+description: "Use a keyboard macro to send selected text to Gemini AI with a custom prompt, then automatically paste the result back in place."
+---
+
+The **AI Text Convert** macro type (`aiTextConvert`) lets you transform text in any application without leaving your keyboard. Select some text, press a macro key, and SwitchPalette sends the text to Gemini, then pastes the result back at the cursor position.
+
+Common use cases include:
+
+- Rewriting text to a different tone (formal, casual, concise)
+- Translating between languages
+- Summarizing long passages
+- Reformatting content (lists, prose, bullets)
+
+<Warning>
+  AI Text Conversion requires a connected Firebase project with the Firebase AI (Gemini) backend enabled. Complete [Firebase Setup](/configuration/firebase-setup) before creating this macro type.
+</Warning>
+
+## How it works
+
+The full execution flow when a macro key is pressed:
+
+<Steps>
+  <Step title="Copy selected text">
+    SwitchPalette sends `Ctrl+C` via the Windows `SendInput` API (`KeySender.sendMultiKeyPush`). After a 100 ms delay, it reads the clipboard contents.
+  </Step>
+
+  <Step title="Check for non-empty input">
+    If the clipboard is empty, execution stops and a notification is shown. Nothing is sent to the API.
+  </Step>
+
+  <Step title="Build the prompt">
+    The app loads `assets/prompts/ai_text_convert.toml` at runtime and interpolates two placeholders:
+
+    - `{{order}}` — the custom instruction stored in the macro (e.g., "translate to English")
+    - `{{input}}` — the text that was on the clipboard
+
+    This produces the final prompt string sent to Gemini.
+  </Step>
+
+  <Step title="Call the Gemini API">
+    The app instantiates a generative model using the model name from the TOML file:
+
+    ```dart
+    final model = FirebaseAI.googleAI().generativeModel(
+      model: promptProfile.model,
+    );
+    final response = await model.generateContent([Content.text(promptProfile.prompt)]);
+    ```
+  </Step>
+
+  <Step title="Paste the result">
+    The response text is written to the clipboard, and `Ctrl+V` is sent via `SendInput`. The transformed text replaces or follows the original selection depending on the application.
+  </Step>
+</Steps>
+
+## Prompt profile (TOML file)
+
+All AI Text Convert macros share a single prompt template defined in:
+
+```
+assets/prompts/ai_text_convert.toml
+```
+
+This file is bundled inside the application at build time. Its current contents:
+
+```toml
+schema_version = 1
+model = "gemini-2.5-flash-lite"
+
+prompt = """
+あなたはテキスト整形APIです。
+以下の入力テキスト {{input}} を、 {{order}} して返してください。
+
+変換ルール:
+- 意味は変えない（情報の追加・削除・推測をしない）
+
+出力ルール:
+- 整形後の本文のみを出力する
+- 前置き、解説、注釈、引用、JSON、コードブロックは出力しない
+
+入力:
+{{order}}
+{{input}}
+"""
+```
+
+| Field            | Description                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| `schema_version` | Internal versioning for the TOML format. Currently `1`.                                |
+| `model`          | The Gemini model identifier passed to `FirebaseAI.googleAI().generativeModel()`.       |
+| `prompt`         | The template string. `{{order}}` and `{{input}}` are replaced at runtime per execution. |
+
+The prompt instructs the model to act as a text-formatting API: preserve meaning, add nothing, and return only the transformed body text with no preamble, annotations, or code blocks.
+
+<Note>
+  To change the model or the base prompt behavior, edit `assets/prompts/ai_text_convert.toml` and rebuild the application. Individual macros only store the `{{order}}` instruction — the surrounding template is always loaded from this file.
+</Note>
+
+## Creating an AI Text Convert macro
+
+<Steps>
+  <Step title="Open the macro editor">
+    Launch SwitchPalette and navigate to the macro configuration panel. Select the macro key slot you want to assign (M1–M12).
+  </Step>
+
+  <Step title="Choose the AI macro type">
+    Set the macro type to **AI** (`aiTextConvert`). The display label in Japanese is "AIテキスト変換".
+  </Step>
+
+  <Step title="Enter a name and prompt order">
+    Give the macro a descriptive name. In the **AI Prompt** (order) field, enter a short instruction in the same language as your prompt template. For example:
+
+    - `英語に翻訳` — translate to English
+    - `箇条書きにまとめる` — rewrite as bullet points
+    - `丁寧な敬語に変換` — convert to polite keigo
+  </Step>
+
+  <Step title="Save and test">
+    Save the macro. Select some text in any application, then press the assigned macro key. A notification will appear while the macro is running, and another when it completes.
+  </Step>
+</Steps>
+
+## Macro data model
+
+An AI Text Convert macro is stored in `SharedPreferences` as a serialized `Macro` object:
+
+```dart
+Macro(
+  name: "Translate to English",
+  type: MacroType.aiTextConvert,
+  aiPrompt: "英語に翻訳",
+)
+```
+
+The `aiPrompt` field maps to the `{{order}}` placeholder in the TOML template.
+
+## Limitations
+
+<AccordionGroup>
+  <Accordion title="Firebase AI must be configured">
+    The macro will fail silently (or show an error notification) if Firebase is not initialized or if the Gemini API is not enabled for your Firebase project. See [Firebase Setup](/configuration/firebase-setup).
+  </Accordion>
+
+  <Accordion title="Selected text must be non-empty">
+    If no text is selected when the macro key is pressed, `Ctrl+C` copies nothing and the clipboard will be empty. The app detects this and shows a failure notification without calling the API.
+  </Accordion>
+
+  <Accordion title="Model availability">
+    The model name `gemini-2.5-flash-lite` is read from the TOML file at runtime. If this model is deprecated or unavailable in your Firebase project's region, change the `model` field in the TOML and rebuild.
+  </Accordion>
+
+  <Accordion title="Clipboard is overwritten">
+    Both the input (copied text) and the output (AI result) pass through the system clipboard. Any content previously on the clipboard will be replaced during macro execution.
+  </Accordion>
+</AccordionGroup>

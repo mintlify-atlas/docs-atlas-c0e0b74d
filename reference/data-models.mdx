@@ -1,0 +1,358 @@
+---
+title: 'Data models'
+description: 'Complete reference for every Dart model class used in SwitchPalette: fields, types, enumerations, and JSON serialization examples.'
+---
+
+All models are defined under `lib/models/` and use the `freezed` package for immutability and code generation. JSON serialization is provided by `json_serializable`.
+
+---
+
+## Macro
+
+Defined in `lib/models/macro.dart`. Represents a single action that can be assigned to one of the 12 monitored macro keys (M1–M12).
+
+<ResponseField name="name" type="string" required>
+  Human-readable display name for the macro shown in the editor UI.
+</ResponseField>
+
+<ResponseField name="type" type="MacroType" required>
+  The category of action this macro performs. See [MacroType](#macrotype) below.
+</ResponseField>
+
+<ResponseField name="docId" type="string">
+  Firestore document ID of an `InfraredCode` document. Required when `type` is `infrared`; unused for other types.
+</ResponseField>
+
+<ResponseField name="keys" type="number[]">
+  List of Windows virtual key codes (integers) to press. Used when `type` is `combo`.
+</ResponseField>
+
+<ResponseField name="appPath" type="string">
+  Absolute file path to the executable to launch. Used when `type` is `openApp`.
+</ResponseField>
+
+<ResponseField name="aiPrompt" type="string">
+  Natural-language instruction sent to Gemini AI together with the selected text. Used when `type` is `aiTextConvert`.
+</ResponseField>
+
+<ResponseField name="text" type="string">
+  Static text to paste. Used when `type` is `text`.
+</ResponseField>
+
+```json
+{
+  "name": "Summarise",
+  "type": "aiTextConvert",
+  "aiPrompt": "Summarise this text in one sentence."
+}
+```
+
+```json
+{
+  "name": "Copy-Paste shortcut",
+  "type": "combo",
+  "keys": [162, 86]
+}
+```
+
+---
+
+## MacroType
+
+Enum defined in `lib/models/macro.dart`. Controls which execution path `MacroService.runMacro()` follows.
+
+| Value | `displayName` | Description |
+|---|---|---|
+| `infrared` | `"Beam"` | Triggers an infrared signal via Firestore. Requires `docId`. |
+| `combo` | `"Com"` | Sends a chord of virtual key codes via the Win32 `SendInput` API. Requires `keys`. |
+| `openApp` | `"App"` | Launches an application executable. Requires `appPath`. |
+| `text` | `"Text"` | Pastes a static string by writing to the clipboard and sending Ctrl+V. Requires `text`. |
+| `aiTextConvert` | `"AI"` | Reads selected text (Ctrl+C), transforms it with Gemini AI, and pastes the result. Requires `aiPrompt`. |
+
+Each value also carries a `displayLabel` (Japanese UI label) and a `displayIcon` (`IconData`).
+
+---
+
+## MonitorKeycodes
+
+Enum defined in `lib/infrastructure/macro/run_macro.dart`. Maps the 12 macro trigger keys to their Windows virtual key codes.
+
+SwitchPalette reserves the F13–F24 virtual key range (which normally have no physical key on standard keyboards) as macro triggers. The keyboard firmware is programmed to emit these codes when M1–M12 keys are pressed.
+
+| Value | `vkCode` | `shortName` |
+|---|---|---|
+| `macro1` | `0x7C` | `"M1"` |
+| `macro2` | `0x7D` | `"M2"` |
+| `macro3` | `0x7E` | `"M3"` |
+| `macro4` | `0x7F` | `"M4"` |
+| `macro5` | `0x80` | `"M5"` |
+| `macro6` | `0x81` | `"M6"` |
+| `macro7` | `0x82` | `"M7"` |
+| `macro8` | `0x83` | `"M8"` |
+| `macro9` | `0x84` | `"M9"` |
+| `macro10` | `0x85` | `"M10"` |
+| `macro11` | `0x86` | `"M11"` |
+| `macro12` | `0x87` | `"M12"` |
+
+Macro assignments are persisted to `shared_preferences` keyed by the enum name (e.g. `"macro1"`).
+
+---
+
+## Workflow
+
+Defined in `lib/models/workflow.dart`. Represents a named automation sequence stored in the `workflows` Firestore collection.
+
+<ResponseField name="displayName" type="string" required>
+  Human-readable workflow name. Also used as the lookup key when updating or deleting the document in Firestore.
+</ResponseField>
+
+<ResponseField name="actions" type="WorkflowAction[]" required>
+  Ordered list of all actions that make up the workflow graph. At least one action must have `actionType` equal to `Start`.
+</ResponseField>
+
+<ResponseField name="trigger" type="WorkflowTrigger" required>
+  Defines when the workflow should run.
+</ResponseField>
+
+<ResponseField name="state" type="boolean" default="false">
+  Execution state flag. Defaults to `false`.
+</ResponseField>
+
+```json
+{
+  "displayName": "Morning routine",
+  "state": false,
+  "trigger": {
+    "type": "TimeBased",
+    "scheduledTime": "2026-01-01T08:00:00.000Z"
+  },
+  "actions": [
+    {
+      "actionId": "start-1",
+      "actionName": "Start",
+      "actionType": "Start",
+      "nextActionIds": ["notify-1"],
+      "positionX": 100.0,
+      "positionY": 100.0,
+      "macro": null,
+      "delayDuration": null,
+      "message": null
+    }
+  ]
+}
+```
+
+---
+
+## WorkflowAction
+
+Defined in `lib/models/workflow.dart`. A single node in a workflow's execution graph.
+
+<ResponseField name="actionId" type="string" required>
+  Unique identifier for this action node within the workflow.
+</ResponseField>
+
+<ResponseField name="nextActionIds" type="string[]" required>
+  IDs of the actions to execute after this one completes. An empty list terminates the branch.
+</ResponseField>
+
+<ResponseField name="actionName" type="string" required>
+  Display label for this action in the visual editor.
+</ResponseField>
+
+<ResponseField name="positionX" type="number" required>
+  X coordinate of the node in the visual workflow editor canvas.
+</ResponseField>
+
+<ResponseField name="positionY" type="number" required>
+  Y coordinate of the node in the visual workflow editor canvas.
+</ResponseField>
+
+<ResponseField name="actionType" type="ActionType" required>
+  Determines which execution path `WorkflowService.runAction()` takes. See [ActionType](#actiontype).
+</ResponseField>
+
+<ResponseField name="macro" type="Macro | null" required>
+  The macro to execute. Required when `actionType` is `Macro`; `null` otherwise.
+</ResponseField>
+
+<ResponseField name="delayDuration" type="Duration | null" required>
+  How long to pause. Required when `actionType` is `Delay`; `null` otherwise.
+</ResponseField>
+
+<ResponseField name="message" type="string | null" required>
+  Text content for notifications or end messages. Used when `actionType` is `Notification` or `End`.
+</ResponseField>
+
+---
+
+## ActionType
+
+Enum defined in `lib/models/workflow.dart`. Controls what `WorkflowService.runAction()` does for a given node.
+
+| Value | `displayName` | Behaviour |
+|---|---|---|
+| `Start` | `"開始"` | Entry point of the workflow graph. No operation; execution immediately continues to `nextActionIds`. |
+| `Macro` | `"マクロ"` | Calls `MacroService.runMacro(action.macro)`. |
+| `Delay` | `"遅延"` | Awaits `Future.delayed(action.delayDuration)`. |
+| `Notification` | `"通知"` | Shows a Windows toast notification with `action.message` as the body. |
+| `End` | `"終了"` | Optionally shows a completion toast notification if `action.message` is set, then returns `true` to signal success. |
+
+---
+
+## WorkflowTrigger
+
+Defined in `lib/models/workflow.dart`. Describes when a workflow should be activated.
+
+<ResponseField name="type" type="TriggerType" required>
+  The trigger mechanism. See [TriggerType](#triggertype).
+</ResponseField>
+
+<ResponseField name="scheduledTime" type="DateTime | null" required>
+  The scheduled execution time. Required when `type` is `TimeBased`; `null` for `EventBased`.
+</ResponseField>
+
+---
+
+## TriggerType
+
+Enum defined in `lib/models/workflow.dart`.
+
+| Value | Description |
+|---|---|
+| `TimeBased` | Workflow is scheduled to run at a specific `DateTime`. |
+| `EventBased` | Workflow is triggered by an event (e.g. manual execution from the UI). |
+
+---
+
+## InfraredCode
+
+Defined in `lib/models/infrared_code.dart`. Represents a single infrared remote code stored in the `codes` Firestore collection.
+
+<ResponseField name="name" type="string" required>
+  Unique human-readable name used to identify and query the document.
+</ResponseField>
+
+<ResponseField name="state" type="boolean" required>
+  Signal trigger flag. When the app sets this to `true`, the Beam hardware reads the change and transmits the IR signal, then resets the flag.
+</ResponseField>
+
+<ResponseField name="code" type="string" required>
+  The encoded infrared signal data as a string understood by the Beam hardware.
+</ResponseField>
+
+```json
+{
+  "name": "TV power",
+  "state": false,
+  "code": "0x20DF10EF"
+}
+```
+
+---
+
+## UnregisteredCode
+
+Defined in `lib/models/unregistered_code.dart`. Represents an infrared code during the learning/registration process before it is saved to Firestore.
+
+<ResponseField name="name" type="string" required>
+  Name to assign to the new code.
+</ResponseField>
+
+<ResponseField name="state" type="CodeRegisteredState">
+  Current registration progress. See [CodeRegisteredState](#coderegisteredstate).
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message if registration failed.
+</ResponseField>
+
+---
+
+## CodeRegisteredState
+
+Enum defined in `lib/models/unregistered_code.dart`.
+
+| Value | Description |
+|---|---|
+| `reading` | The hardware is actively reading the infrared signal. |
+| `error` | Reading failed; see `UnregisteredCode.error` for details. |
+| `done` | Signal was read successfully and is ready to save. |
+| `none` | Default initial state; no operation in progress. |
+
+---
+
+## VialState
+
+Defined in `lib/models/vial_state.dart`. The Riverpod state object for the `vialProvider`. Represents the current connection status and keymap.
+
+<ResponseField name="isConnected" type="boolean" default="false">
+  Whether a HID device is currently open and connected.
+</ResponseField>
+
+<ResponseField name="deviceName" type="string">
+  Name of the connected device as defined in `myDevices` (e.g. `"MCKeyboard"`). `null` when disconnected.
+</ResponseField>
+
+<ResponseField name="statusMessage" type="string | null" required>
+  Latest human-readable status string (e.g. `"Connected and loaded keymap"`, `"Failed to connect"`). `null` before first connection attempt.
+</ResponseField>
+
+<ResponseField name="keyMappings" type="object" default="{}">
+  Map from key ID strings (e.g. `"0,0"`, `"2,13"`) to display label strings (e.g. `"Esc"`, `"Up"`). Populated after a successful keymap read.
+</ResponseField>
+
+<ResponseField name="matrix" type="number[][][]">
+  Three-dimensional array `matrix[layer][row][col]` of raw 16-bit Vial keycodes. `null` until a keymap read succeeds.
+</ResponseField>
+
+---
+
+## MyDevice
+
+Defined in `lib/models/my_device.dart`. Static definition of a supported keyboard device. Instances are stored in the `myDevices` list in `lib/infrastructure/hid/list_of_mydevices.dart`.
+
+<ResponseField name="name" type="string" required>
+  Device display name and lookup key (e.g. `"MCKeyboard"`).
+</ResponseField>
+
+<ResponseField name="vendorId" type="number" required>
+  USB Vendor ID used for HID device matching.
+</ResponseField>
+
+<ResponseField name="productId" type="number" required>
+  USB Product ID used for HID device matching.
+</ResponseField>
+
+<ResponseField name="usegePage" type="number" required>
+  HID usage page for the Raw HID interface (typically `0xFF60` for Vial).
+</ResponseField>
+
+<ResponseField name="usege" type="number" required>
+  HID usage value for the Raw HID interface (typically `0x61` for Vial).
+</ResponseField>
+
+<ResponseField name="keys" type="KeyData[]" required>
+  List of `KeyData` objects defining the physical layout of the keyboard. Each `KeyData` has an `id` in `"row,col"` format, a `defaultLabel`, and a `width` in key units.
+</ResponseField>
+
+---
+
+## AppInfo
+
+Defined in `lib/models/app_info.dart`. Represents an installed Windows application discovered via the registry.
+
+<ResponseField name="DisplayName" type="string" required>
+  Application display name as stored in the Windows registry uninstall key.
+</ResponseField>
+
+<ResponseField name="DisplayIcon" type="string" required>
+  Path to the application executable (or icon), derived from the registry `DisplayIcon` value with any resource index suffix (`,0` etc.) stripped.
+</ResponseField>
+
+```json
+{
+  "DisplayName": "Visual Studio Code",
+  "DisplayIcon": "C:\\Users\\user\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"
+}
+```

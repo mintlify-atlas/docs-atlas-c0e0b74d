@@ -1,0 +1,57 @@
+---
+title: "Introduction"
+description: "SwitchPalette is a Windows desktop application for managing Vial-compatible custom keyboards, advanced macros, infrared remote control, and AI-powered text transformations."
+---
+
+SwitchPalette brings together keyboard customization, macro automation, infrared remote management, and AI text processing into a single Windows application. If you use a Vial-compatible custom keyboard, SwitchPalette gives you a visual interface to remap keys, build macros, automate workflows, and control smart home devices — all without leaving your desktop.
+
+## What problems it solves
+
+Managing a custom keyboard usually means juggling separate tools: one for keymaps, another for macros, another for scripting. SwitchPalette consolidates these into one place:
+
+- **Keymap fragmentation** — remap any key on any layer in real time with a visual editor, without flashing firmware
+- **Macro limitations** — go beyond simple text snippets to launch apps, send IR signals, or rewrite selected text with Gemini AI
+- **IR remote sprawl** — store all your infrared remote codes in Firebase Firestore so they are available across devices
+- **Workflow complexity** — chain multiple actions (app launch, notification, macro, wait) into reusable visual workflows
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Keyboard customization" icon="keyboard" href="/features/keyboard-customization">
+    Auto-detect Vial-compatible keyboards over USB and remap keys across up to four layers in real time. Changes apply immediately without re-flashing firmware.
+  </Card>
+  <Card title="Advanced macros" icon="bolt" href="/features/macros">
+    Assign macros to M1–M12 keys. Macro types include text input, key combos, app launch, IR signal send, and AI text transformation via Gemini.
+  </Card>
+  <Card title="Workflow automation" icon="diagram-project" href="/features/workflows">
+    Build automation workflows from a visual editor. Combine app launches, notifications, wait steps, and macro calls into sequential flows.
+  </Card>
+  <Card title="Infrared remote (Beam)" icon="wifi" href="/features/infrared-remote">
+    Learn and store infrared remote codes synced to Cloud Firestore. Send signals from macros or the Beam settings panel.
+  </Card>
+</CardGroup>
+
+## Technology stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Flutter |
+| Language | Dart (SDK ^3.7.2) |
+| State management | Riverpod, flutter_hooks |
+| Database / AI | Cloud Firestore (Firebase), Gemini AI (firebase_ai) |
+| Desktop integration | bitsdojo_window, tray_manager, windows_notification, win32 |
+| Device communication | hid4flutter (HID over USB) |
+| Animations | Rive |
+| Configuration | shared_preferences, TOML |
+
+SwitchPalette communicates with Vial-compatible keyboards using the raw HID interface via `hid4flutter`. The Vial protocol's `dynamicKeymap` commands (`0x12` get, `0x13` set) are used to read and write keycodes directly over USB without requiring firmware changes.
+
+## License
+
+SwitchPalette is released under the **BSD-3-Clause** license.
+
+## Next steps
+
+<Card title="Quick Start" icon="rocket" href="/quickstart">
+  Connect your keyboard, remap a key, and create your first macro in under five minutes.
+</Card>

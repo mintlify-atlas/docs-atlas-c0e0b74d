@@ -1,80 +1,118 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick Start"
+description: "Connect your Vial-compatible keyboard, remap a key, and create your first macro in minutes."
 ---
 
-## Get started in three steps
+This guide walks you through the core SwitchPalette workflow from a fresh start. By the end you will have a key remapped and a macro assigned and running.
 
-Get your documentation site running locally and make your first customization.
+<Note>
+  You need a keyboard running Vial-compatible firmware. Standard keyboards will not be detected. See [Device Setup](/configuration/device-setup) if your keyboard is not appearing.
+</Note>
 
-### Step 1: Set up your local environment
+## Remap a key
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Connect your keyboard">
+    Plug your Vial-compatible keyboard into a USB port on your Windows machine. No driver installation is required — SwitchPalette communicates over the standard HID interface.
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Launch SwitchPalette">
+    Run the application. SwitchPalette starts in the background and adds an icon to the system tray. The main window opens automatically on first launch.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <Tip>
+      After the first launch, you can reopen the main window by clicking the tray icon.
+    </Tip>
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Select your keyboard">
+    The **Device Selection** page opens first. SwitchPalette queries connected HID devices and displays all detected Vial-compatible keyboards as cards.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    Click the card for your keyboard. SwitchPalette connects over USB and reads the current keymap from the device.
 
-### Step 3: Go live
+    <Note>
+      If your keyboard is not listed, unplug and replug it, then refresh the page. Confirm the keyboard is running Vial firmware — see [Device Setup](/configuration/device-setup).
+    </Note>
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Open the Editor page">
+    After selecting a device, the **Editor** page opens. The visual keyboard layout displays your current keymap. Each key shows its current assignment.
+
+    The layout reflects the physical key positions and widths for your specific keyboard model.
+  </Step>
+
+  <Step title="Remap a key">
+    Click any key on the visual layout. The key palette appears at the bottom of the screen, showing all available keycodes organized by category.
+
+    Click the keycode you want to assign. The change is sent to the keyboard immediately over USB — no save step required. Switch between layers using the layer selector to configure alternative assignments.
+  </Step>
+</Steps>
+
+## Create a macro
+
+Macros in SwitchPalette are triggered by the M1–M12 keys. These correspond to Windows virtual key codes F13–F24, which SwitchPalette reserves exclusively for macro execution.
+
+| Macro key | Virtual key code |
+|---|---|
+| M1 | `0x7C` |
+| M2 | `0x7D` |
+| M3 | `0x7E` |
+| M4 | `0x7F` |
+| M5 | `0x80` |
+| M6 | `0x81` |
+| M7 | `0x82` |
+| M8 | `0x83` |
+| M9 | `0x84` |
+| M10 | `0x85` |
+| M11 | `0x86` |
+| M12 | `0x87` |
+
+<Steps>
+  <Step title="Assign an M-key to a physical key">
+    In the **Editor** page, click the physical key you want to use as your macro trigger. In the key palette, navigate to the macro key section and select **M1** (or any M1–M12 key). The assignment is written to the keyboard immediately.
+  </Step>
+
+  <Step title="Open the macro settings">
+    In the key palette, switch to the **Macro** tab. Click the **M1** slot to open the macro settings dialog for that key.
+  </Step>
+
+  <Step title="Configure the macro action">
+    Choose a macro type and fill in its details:
+
+    | Type | What it does |
+    |---|---|
+    | **Text** | Pastes a fixed string using the clipboard |
+    | **Combo** | Sends a simultaneous key combination (e.g. Ctrl+Shift+T) |
+    | **Open app** | Launches an executable at a specified path |
+    | **Infrared** | Sends a stored IR code via Beam |
+    | **AI text convert** | Rewrites selected text using a Gemini AI prompt |
+
+    <Tip>
+      Start with the **Text** type — enter a phrase you type frequently, like an email signature or code snippet, and assign it to M1.
+    </Tip>
+  </Step>
+
+  <Step title="Trigger the macro">
+    Press the physical key you assigned M1 to. SwitchPalette's background keyboard monitor intercepts the F13 keycode (`0x7C`) and executes the macro immediately.
+
+    <Note>
+      Macro monitoring only runs when SwitchPalette is active (not in debug mode). Run the release build with `flutter build windows` to enable background key monitoring.
+    </Note>
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Keyboard customization" icon="keyboard" href="/features/keyboard-customization">
+    Learn about multi-layer keymaps, the visual editor, and how keycodes are written to the device.
+  </Card>
+  <Card title="Macros" icon="bolt" href="/features/macros">
+    Explore all macro types including AI text transformation with Gemini.
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/features/workflows">
+    Chain multiple actions into automated workflows triggered by key presses.
+  </Card>
+  <Card title="Firebase setup" icon="database" href="/configuration/firebase-setup">
+    Configure Firebase to enable IR remote management and AI text conversion.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

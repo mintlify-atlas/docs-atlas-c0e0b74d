@@ -1,0 +1,87 @@
+---
+title: 'FAQ'
+description: 'Answers to frequently asked questions about SwitchPalette keyboard support, Firebase requirements, macros, workflows, and app behaviour.'
+---
+
+<AccordionGroup>
+
+  <Accordion title="What keyboards are supported?">
+    SwitchPalette currently has built-in support for **MCKeyboard** — a custom 60% keyboard (VID `0xFEED`, PID `0x6D63`) with 4 layers, 4 rows, and 14 columns.
+
+    Any Vial-compatible keyboard can be added by registering its VID, PID, HID usage page, and usage value as a new `MyDevice` entry in `lib/infrastructure/hid/list_of_mydevices.dart`, along with a `DeviceLayoutConfig` and key layout definition. There is no limit on the number of registered devices.
+  </Accordion>
+
+  <Accordion title="Do I need Vial firmware on my keyboard?">
+    Yes. SwitchPalette communicates with keyboards over the **Vial Raw HID interface** (usage page `0xFF60`, usage `0x61`). The keyboard must be flashed with Vial-compatible firmware that exposes this interface and supports the `dynamicKeymap` commands (`0x12` / `0x13`).
+
+    Keyboards running standard QMK firmware without the Vial extension will not respond correctly to the keymap read and write commands.
+  </Accordion>
+
+  <Accordion title="Can I use SwitchPalette without Firebase?">
+    Partially. The keymap editor and macro execution work entirely offline — keymap changes are sent directly over USB HID, and macro assignments are stored locally in `shared_preferences`.
+
+    The following features require a Firebase project with Firestore and Firebase AI configured:
+
+    - **Beam (infrared)** macros — infrared codes and their trigger state are stored in Firestore.
+    - **Workflow** storage — workflows are persisted in the `workflows` Firestore collection.
+    - **AI text conversion** macros — text transformation uses `FirebaseAI.googleAI().generativeModel(...)` which requires a Firebase AI (Gemini) setup.
+
+    Without Firebase, attempting to use these features will produce errors at runtime.
+  </Accordion>
+
+  <Accordion title="How do I add my keyboard if it's not detected?">
+    <Steps>
+      <Step title="Find your keyboard's HID identifiers">
+        Use a tool such as [USBDeview](https://www.nirsoft.net/utils/usb_devices_view.html) or the `hid4flutter` device list to find your keyboard's Vendor ID, Product ID, usage page, and usage value for its Raw HID interface. On a Vial keyboard the Raw HID interface typically uses usage page `0xFF60` and usage `0x61`.
+      </Step>
+      <Step title="Add a MyDevice entry">
+        Open `lib/infrastructure/hid/list_of_mydevices.dart` and add a new `MyDevice` to the `myDevices` list with the identifiers from step 1, along with a `keys` list that describes each physical key in `row,col` format.
+      </Step>
+      <Step title="Add a layout config">
+        Add a corresponding entry to the `deviceLayouts` map specifying the number of `layers`, `rows`, and `cols`.
+      </Step>
+      <Step title="Rebuild and test">
+        Run `flutter pub get` if needed, rebuild the app, and connect your keyboard. It should now appear on the device selection page.
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="What is the difference between a macro and a workflow?">
+    A **macro** is a single self-contained action assigned to one of the 12 M-keys (M1–M12). When you press the assigned key, exactly one action runs: send an IR signal, type text, open an app, run a key combination, or convert text with AI.
+
+    A **workflow** is a graph of multiple ordered steps that runs as a sequence. A workflow can chain macros together, insert delays between steps, show notifications at intermediate points, and be triggered on a time schedule or manually. Workflows are stored in Firestore; macros are stored locally.
+
+    Use a macro when you need a single instant action. Use a workflow when you need to coordinate multiple actions with timing or notifications.
+  </Accordion>
+
+  <Accordion title="Which AI model is used for text conversion?">
+    Text conversion uses **Google Gemini** via the `firebase_ai` package (`FirebaseAI.googleAI().generativeModel(...)`). The specific model name is loaded at runtime by `AiTextConvertPromptProfile.createAiTextConvertPrompt()` from a prompt profile configuration. The model name is not hard-coded in the macro execution code — it is read from the prompt profile defined per macro.
+
+    Firebase AI (Gemini) must be enabled in your Firebase project for this feature to work.
+  </Accordion>
+
+  <Accordion title="Does the app work when minimized?">
+    Yes. SwitchPalette runs as a **system tray application**. When you close the main window, the app remains alive in the system tray. The low-level keyboard hook (`WH_KEYBOARD_LL`) continues to monitor for M1–M12 key presses and executes macros in the background.
+
+    To fully quit the app, right-click the tray icon and select "閉じる" (Close).
+  </Accordion>
+
+  <Accordion title="Can I use multiple keyboards?">
+    Multiple keyboards can be registered in `list_of_mydevices.dart`, but the current UI presents a single device selection page — you pick one device to connect at a time. Only one HID connection is active at once through `VialService`. The keyboard monitor hook (`KeyboardMonitor`) listens to all keyboard input system-wide regardless of which device is selected.
+  </Accordion>
+
+  <Accordion title="What are the M1–M12 keys?">
+    M1–M12 are **macro trigger keys** defined in the `MonitorKeycodes` enum. They correspond to Windows virtual key codes `0x7C`–`0x87`, which are the F13–F24 range. Standard keyboards do not have physical F13–F24 keys, so these codes are safe to use as custom triggers.
+
+    On a Vial keyboard you assign `M1`–`M12` (Vial key codes `0x6800`–`0x7300`) to physical keys using the keymap editor. When SwitchPalette's keyboard hook detects one of these codes it looks up the associated `Macro` in `shared_preferences` and executes it.
+  </Accordion>
+
+  <Accordion title="Is my keymap stored locally or in the cloud?">
+    **Keymap data is stored on the keyboard itself.** When you change a key assignment, SwitchPalette writes the new keycode directly to the keyboard's flash memory via the Vial `dynamicKeymapSetBuffer` command. The app does not cache or back up the keymap in Firestore or `shared_preferences`.
+
+    **Macro assignments** (which macro is assigned to M1–M12) are stored locally in `shared_preferences` on your Windows machine.
+
+    **Workflows** and **infrared codes** are stored in Firestore and are therefore tied to your Firebase project.
+  </Accordion>
+
+</AccordionGroup>

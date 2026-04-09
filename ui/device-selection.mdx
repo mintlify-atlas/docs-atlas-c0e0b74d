@@ -1,0 +1,86 @@
+---
+title: "Device Selection"
+description: "The first screen shown on launch — how SwitchPalette scans for connected keyboards and connects to them."
+---
+
+When SwitchPalette starts, it opens the **Device Selection** screen. The screen enumerates every USB HID device attached to the system and displays a card for each one that matches a known keyboard. An animated background plays while you choose a device.
+
+## How auto-detection works
+
+On load, `DeviceSelectPage` calls `deviceList()`, which uses the `hid4flutter` package to enumerate all HID devices currently connected to the system. Each discovered device is represented as a `HidDevice` with a `vendorId`, `productId`, and `productName`.
+
+The app then matches each device against the registered device list (`myDevices` in `list_of_mydevices.dart`) by comparing `vendorId` and `productId`. Devices that match appear as selectable cards on screen. Devices that do not match are not shown.
+
+```dart
+// DeviceSelectPage — simplified
+void getHidDevice() async {
+  devices.value = await deviceList();
+}
+```
+
+Each card shows:
+
+- An animated keyboard illustration (Rive animation).
+- The device's `productName` as a large label.
+- The VID/PID badge in the format `0xVVVV : 0xPPPP`.
+
+## What to do if no keyboard appears
+
+<Warning>
+If the screen is empty, no recognized HID device was found. Try the following:
+
+1. Unplug and re-plug your keyboard.
+2. Use a different USB port or cable.
+3. Confirm your keyboard is Vial-compatible and listed in `list_of_mydevices.dart`.
+4. On some systems, HID access requires running SwitchPalette as Administrator.
+</Warning>
+
+## Connecting to a device
+
+<Steps>
+  <Step title="Launch SwitchPalette">
+    Open the application. The Device Selection screen appears automatically and scans all connected USB HID devices. The window is centered and sized to 1200 × 800 pixels.
+  </Step>
+  <Step title="Identify your keyboard">
+    Each recognized keyboard is displayed as a card with its product name and VID/PID badge. If multiple keyboards are connected, scroll horizontally to see all cards.
+  </Step>
+  <Step title="Click the keyboard illustration">
+    Tap or click the animated keyboard image on the card for the device you want to use. The app briefly delays to allow the animation to respond, then navigates to the **Editor Page**.
+  </Step>
+  <Step title="Wait for the keymap to load">
+    `VialNotifier.connect` opens the HID device and fetches the full keymap from the keyboard's dynamic keymap buffer. The device name appears in the app bar once the connection is established.
+
+    ```dart
+    // VialNotifier.connect — simplified
+    final success = await _service.connect(selectDevice);
+    if (success) {
+      state = state.copyWith(
+        isConnected: true,
+        deviceName: deviceDef.name,
+        statusMessage: "Connected to ${deviceDef.name}",
+      );
+      // Fetch the full keymap matrix
+      final keymap = await _service.getKeymap(
+        layers: config.layers,
+        rows: config.rows,
+        cols: config.cols,
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## System tray integration
+
+After you connect to a keyboard and navigate to the Editor Page, SwitchPalette minimizes to the Windows system tray when you close the window. The app continues running in the background so it can monitor key presses and execute macros and workflows without the main window being visible.
+
+The tray icon shows a context menu with two options:
+
+| Menu item | Action |
+|-----------|--------|
+| **SwitchPaletteを開く** | Restores and focuses the main window. |
+| **閉じる** | Exits the application completely. |
+
+<Note>
+Clicking the tray icon opens the context menu. The application does not exit unless you choose **閉じる** from the menu.
+</Note>

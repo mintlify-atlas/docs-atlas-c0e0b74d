@@ -1,0 +1,189 @@
+---
+title: "Workflows"
+description: "Chain macros, delays, and notifications into automated sequences that run on a schedule or in response to events."
+---
+
+Workflows let you compose multiple actions into an ordered, branching sequence. Instead of pressing a macro key for each step, you define the full sequence once and trigger it automatically.
+
+## What workflows are
+
+A `Workflow` is a named, directed graph of `WorkflowAction` nodes. Execution starts at the `Start` node and follows `nextActionIds` links until an `End` node is reached. Each node can branch to multiple next nodes, and all branches are awaited before the workflow is considered complete.
+
+```dart
+class Workflow {
+  final String displayName;
+  final List<WorkflowAction> actions;
+  final WorkflowTrigger trigger;
+  final bool state; // runtime execution flag
+}
+```
+
+## Action types
+
+Each node in the graph has an `ActionType` that determines what happens when the node runs:
+
+<AccordionGroup>
+  <Accordion title="Start">
+    The entry point of every workflow. Every workflow must have exactly one `Start` node. Execution begins here; the node itself performs no action.
+  </Accordion>
+  <Accordion title="Macro">
+    Runs any configured `Macro` — infrared, combo, app launch, text paste, or AI text transform. The action holds a full `Macro` object, so the same macro types available on keyboard keys are available in workflows.
+
+    ```dart
+    case ActionType.Macro:
+      await MacroService.runMacro(action.macro);
+    ```
+  </Accordion>
+  <Accordion title="Delay">
+    Pauses execution for a specified `Duration` before proceeding to the next node. Use this to add a wait between actions (e.g. allow an app to finish loading before sending keystrokes).
+
+    ```dart
+    case ActionType.Delay:
+      await Future.delayed(action.delayDuration ?? Duration.zero);
+    ```
+  </Accordion>
+  <Accordion title="Notification">
+    Sends a Windows system notification with a custom message. Useful for confirming that a step completed or alerting you to a status change mid-workflow.
+
+    ```dart
+    case ActionType.Notification:
+      sendNotification("ワークフロー実行中", action.message ?? "");
+    ```
+  </Accordion>
+  <Accordion title="End">
+    Marks the completion of the workflow. If the node has a non-empty `message`, a final notification is displayed with that text.
+
+    ```dart
+    case ActionType.End:
+      if (action.message != null && action.message!.isNotEmpty) {
+        sendNotification("ワークフロー完了", action.message!);
+      }
+      return true;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Trigger types
+
+A `WorkflowTrigger` defines when a workflow runs automatically:
+
+| Trigger type   | Behavior |
+|----------------|----------|
+| `TimeBased`    | Runs the workflow at a `scheduledTime`. |
+| `EventBased`   | Runs the workflow in response to an application event. |
+
+```dart
+class WorkflowTrigger {
+  final TriggerType type;
+  final DateTime? scheduledTime; // used when type is TimeBased
+}
+```
+
+## WorkflowAction structure
+
+Every node in the graph is a `WorkflowAction`:
+
+```dart
+class WorkflowAction {
+  final String actionId;          // unique identifier for this node
+  final List<String> nextActionIds; // IDs of nodes to run after this one
+  final String actionName;        // display label in the editor
+  final double positionX;         // canvas X position in the visual editor
+  final double positionY;         // canvas Y position in the visual editor
+  final ActionType actionType;
+  final Macro? macro;             // populated when actionType == Macro
+  final Duration? delayDuration;  // populated when actionType == Delay
+  final String? message;          // used by Notification and End nodes
+}
+```
+
+`positionX` and `positionY` store each node's location on the dot-grid canvas so the workflow layout is preserved between sessions.
+
+## Example workflow: launch app, wait, then notify
+
+```
+[Start] ──► [Macro: open terminal] ──► [Delay: 2 seconds] ──► [Notification: "Terminal ready"] ──► [End]
+```
+
+In code, this corresponds to four `WorkflowAction` objects where each node's `nextActionIds` points to the next:
+
+```dart
+final workflow = Workflow(
+  displayName: "Open Terminal",
+  trigger: WorkflowTrigger(type: TriggerType.EventBased, scheduledTime: null),
+  state: false,
+  actions: [
+    WorkflowAction(
+      actionId: "start",
+      actionName: "Start",
+      actionType: ActionType.Start,
+      nextActionIds: ["open-terminal"],
+      macro: null, delayDuration: null, message: null,
+      positionX: 100, positionY: 200,
+    ),
+    WorkflowAction(
+      actionId: "open-terminal",
+      actionName: "Open terminal",
+      actionType: ActionType.Macro,
+      nextActionIds: ["wait"],
+      macro: Macro(name: "Terminal", type: MacroType.openApp, appPath: "C:\\...\\wt.exe"),
+      delayDuration: null, message: null,
+      positionX: 300, positionY: 200,
+    ),
+    WorkflowAction(
+      actionId: "wait",
+      actionName: "Wait 2s",
+      actionType: ActionType.Delay,
+      nextActionIds: ["done"],
+      macro: null, delayDuration: Duration(seconds: 2), message: null,
+      positionX: 500, positionY: 200,
+    ),
+    WorkflowAction(
+      actionId: "done",
+      actionName: "Notify",
+      actionType: ActionType.End,
+      nextActionIds: [],
+      macro: null, delayDuration: null, message: "Terminal ready",
+      positionX: 700, positionY: 200,
+    ),
+  ],
+);
+```
+
+## How to build a workflow
+
+<Steps>
+  <Step title="Open the workflow editor">
+    Navigate to the workflow settings page and tap **New Workflow**, or select an existing workflow to edit. The editor opens on a dot-grid canvas (`WorkflowBoard`).
+  </Step>
+  <Step title="Name your workflow">
+    Enter a display name in the name field at the top-left of the canvas. This name appears in the workflow list and in completion notifications.
+  </Step>
+  <Step title="Add a Start node">
+    Every workflow begins with a `Start` node. If one is not already present, add it from the action type selector panel on the right side of the canvas.
+  </Step>
+  <Step title="Add action nodes">
+    Open the action selector panel and drag or place nodes onto the canvas:
+    - **Macro** — pick an existing macro from your saved macros.
+    - **Delay** — enter a duration in milliseconds or seconds.
+    - **Notification** — write the message to display.
+  </Step>
+  <Step title="Connect the nodes">
+    Draw connections between nodes by linking a node's output to the next node's input. Each node can have multiple `nextActionIds`, creating parallel branches that all execute and must all succeed.
+  </Step>
+  <Step title="Add an End node">
+    Place an `End` node at the terminal point(s) of your graph. Optionally enter a completion message to display as a notification when the workflow finishes.
+  </Step>
+  <Step title="Set the trigger">
+    Choose a trigger type:
+    - **TimeBased** — set a `scheduledTime` for automatic execution.
+    - **EventBased** — the workflow runs when triggered by the app.
+  </Step>
+  <Step title="Save and run">
+    Save the workflow. Use the run control to execute it immediately and verify each node fires in the correct order.
+  </Step>
+</Steps>
+
+<Warning>
+If any branch of the workflow fails to reach an `End` node, `WorkflowService.runWorkflow` reports the workflow as failed. Check that every branch terminates with an `End` action.
+</Warning>

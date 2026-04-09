@@ -1,0 +1,93 @@
+{
+  "projectType": "frontend",
+  "projectName": "SwitchPalette",
+  "projectDescription": "A Windows desktop app built with Flutter for managing Vial-compatible custom keyboards, advanced macros, infrared remote control, and AI-powered text transformations.",
+  "theme": "almond",
+  "primaryColor": "#5C6BC0",
+  "lightColor": "#E8EAF6",
+  "darkColor": "#283593",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/keyboard-customization",
+              "features/macros",
+              "features/workflows",
+              "features/infrared-remote"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/firebase-setup",
+              "configuration/ai-text-convert",
+              "configuration/device-setup"
+            ]
+          },
+          {
+            "group": "UI Guide",
+            "pages": [
+              "ui/device-selection",
+              "ui/editor-page",
+              "ui/settings-page"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "reference/architecture",
+              "reference/vial-protocol",
+              "reference/data-models"
+            ]
+          },
+          {
+            "group": "FAQ & Troubleshooting",
+            "pages": [
+              "reference/faq",
+              "reference/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Vial-compatible keyboard auto-detection and connection via Raw HID",
+    "Real-time keymap editor with drag-and-drop layer management",
+    "Multi-type macro system (infrared, combo keys, text input, app launch, AI text conversion)",
+    "Visual workflow automation builder with time and event-based triggers",
+    "Cloud-synced infrared remote control codes via Firebase Firestore",
+    "AI-powered text transformation using Gemini AI (summarization, tone conversion, etc.)",
+    "Windows system tray integration with background key monitoring",
+    "Modern UI with Rive animations and glassmorphism design"
+  ],
+  "publicApiSurface": [
+    "VialService.connect(HidDevice)",
+    "VialService.getKeymap({layers, rows, cols})",
+    "VialService.setKey(layer, row, col, keycode, totalRows, totalCols)",
+    "MacroService.runMacro(Macro?)",
+    "MacroService.runMacroByKeycode(MonitorKeycodes)",
+    "WorkflowService.runWorkflow()",
+    "MacroType (infrared, combo, openApp, text, aiTextConvert)",
+    "ActionType (Start, Macro, Delay, Notification, End)",
+    "TriggerType (TimeBased, EventBased)",
+    "MonitorKeycodes (macro1–macro12)"
+  ]
+}

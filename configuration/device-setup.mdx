@@ -1,0 +1,181 @@
+---
+title: "Device Setup"
+description: "Connect a Vial-compatible keyboard to SwitchPalette using HID device detection and VID/PID matching."
+---
+
+SwitchPalette communicates with your keyboard over USB HID using the [hid4flutter](https://pub.dev/packages/hid4flutter) package. The app identifies supported keyboards by matching the device's USB Vendor ID (VID) and Product ID (PID) against a built-in list.
+
+## What is Vial firmware?
+
+[Vial](https://get.vial.today) is an open-source, real-time keyboard configuration firmware compatible with QMK. It exposes a custom HID interface (usage page `0xFF60`, usage `0x61`) that allows host software to read and modify the keyboard's keymap, layers, and macros without reflashing.
+
+SwitchPalette uses this interface to communicate keymap data with compatible keyboards. **Your keyboard must run Vial firmware** for SwitchPalette to connect to it.
+
+<Note>
+  QMK-only firmware without the Vial layer will not expose the required HID usage page and will not be detected by SwitchPalette.
+</Note>
+
+## How device detection works
+
+On launch, SwitchPalette scans all connected USB HID devices and filters them using three criteria:
+
+1. **Vendor ID (VID)** — must match a device in the `myDevices` list
+2. **Product ID (PID)** — must match a device in the `myDevices` list
+3. **HID usage page and usage** — must equal `usagePage: 0xFF60` and `usage: 0x61`
+
+All three must match. Devices that pass all checks are available for connection.
+
+## Supported keyboards
+
+The following keyboard is currently defined in `lib/infrastructure/hid/list_of_mydevices.dart`:
+
+<CardGroup cols={1}>
+  <Card title="MCKeyboard" icon="keyboard">
+    A custom 60% layout keyboard with 4 layers and arrow cluster.
+
+    | Property     | Value      |
+    | ------------ | ---------- |
+    | Vendor ID    | `0xFEED`   |
+    | Product ID   | `0x6D63`   |
+    | Usage page   | `0xFF60`   |
+    | Usage        | `0x61`     |
+    | Layers       | 4          |
+    | Layout       | 4 rows × 14 columns |
+
+    **Key layout (row 0):** Esc, ~, Q–P, \{, \}, Backspace  
+    **Key layout (row 1):** Tab, MO(2), A–L, :, ", Enter  
+    **Key layout (row 2):** LShift, MO(1), Z–M, comma, period, ?, MO(3), Up  
+    **Key layout (row 3):** LCtrl, LGui, LAlt, Space, Home, End, Left, Down, Right
+  </Card>
+</CardGroup>
+
+## Device model
+
+Each supported keyboard is described by a `MyDevice` instance:
+
+```dart
+MyDevice(
+  name: "MCKeyboard",
+  vendorId: 0xfeed,
+  productId: 0x6D63,
+  usegePage: 0xFF60,
+  usege: 0x61,
+  keys: [ /* KeyData entries */ ],
+)
+```
+
+The `MyDevice` class (defined in `lib/models/my_device.dart`) has these fields:
+
+| Field        | Type           | Description                                                              |
+| ------------ | -------------- | ------------------------------------------------------------------------ |
+| `name`       | `String`       | Display name shown in the UI.                                            |
+| `vendorId`   | `int`          | USB Vendor ID (16-bit hex).                                              |
+| `productId`  | `int`          | USB Product ID (16-bit hex).                                             |
+| `usegePage`  | `int`          | HID usage page. Must be `0xFF60` for Vial compatibility.                 |
+| `usege`      | `int`          | HID usage. Must be `0x61` for Vial compatibility.                        |
+| `keys`       | `List<KeyData>`| Per-key metadata: matrix position ID, default label, and display width.  |
+
+`KeyData` entries use a `"row,col"` string as the `id` (e.g., `"0,0"` for row 0, column 0), which maps to the keyboard's switch matrix.
+
+## Verifying your keyboard's VID and PID
+
+Before adding a device definition, confirm your keyboard's actual VID and PID.
+
+<Steps>
+  <Step title="Open Device Manager">
+    Press `Win+X` and choose **Device Manager**. Expand **Human Interface Devices**.
+  </Step>
+
+  <Step title="Find your keyboard">
+    Right-click the HID device you believe is your keyboard and choose **Properties → Details → Hardware IDs**. The value will look like `HID\VID_FEED&PID_6D63&...`.
+  </Step>
+
+  <Step title="Note the values">
+    Extract the four-digit hex values after `VID_` and `PID_`. These are the numbers you will use in the `MyDevice` definition.
+  </Step>
+</Steps>
+
+<Tip>
+  On Windows, the [USBDeview](https://www.nirsoft.net/utils/usb_devices_view.html) utility shows VID and PID in a flat table and is easier to read than Device Manager.
+</Tip>
+
+## Troubleshooting: keyboard not detected
+
+<AccordionGroup>
+  <Accordion title="The keyboard does not appear in SwitchPalette">
+    Confirm the following:
+
+    1. The keyboard is running **Vial firmware**, not stock QMK.
+    2. The VID and PID in `lib/infrastructure/hid/list_of_mydevices.dart` match the values reported by Windows.
+    3. The keyboard is connected **before** launching SwitchPalette. Hot-plug support may vary.
+    4. No other application has exclusive access to the HID interface.
+  </Accordion>
+
+  <Accordion title="The keyboard is detected but key remapping does not work">
+    The Vial HID interface at usage page `0xFF60` / usage `0x61` must be available. Some keyboards expose this as a secondary HID interface. Ensure the correct interface is being matched by verifying the usage page and usage values against the Vial documentation for your specific keyboard.
+  </Accordion>
+
+  <Accordion title="SwitchPalette crashes when connecting">
+    Check the `deviceLayouts` map in `list_of_mydevices.dart`. The `layers`, `rows`, and `cols` values must match the actual matrix dimensions defined in your Vial firmware. A mismatch will cause out-of-bounds errors when reading keymap data.
+  </Accordion>
+</AccordionGroup>
+
+## Adding a custom device
+
+If your keyboard is not in the supported list, you can add it by editing two files.
+
+<Steps>
+  <Step title="Add the device definition">
+    Open `lib/infrastructure/hid/list_of_mydevices.dart` and append a new `MyDevice` entry to the `myDevices` list:
+
+    ```dart
+    MyDevice(
+      name: "MyCustomKeyboard",
+      vendorId: 0xABCD,   // replace with your VID
+      productId: 0x1234,  // replace with your PID
+      usegePage: 0xFF60,  // required for Vial
+      usege: 0x61,        // required for Vial
+      keys: [
+        KeyData(id: "0,0", defaultLabel: 'Esc', width: 1.0),
+        // add one KeyData per physical key in matrix order
+      ],
+    ),
+    ```
+  </Step>
+
+  <Step title="Add a layout configuration">
+    Add an entry to `deviceLayouts` with the number of layers, rows, and columns that match your Vial firmware config:
+
+    ```dart
+    final deviceLayouts = {
+      "MCKeyboard": const DeviceLayoutConfig(layers: 4, rows: 4, cols: 14),
+      "MyCustomKeyboard": const DeviceLayoutConfig(layers: 4, rows: 5, cols: 15),
+    };
+    ```
+  </Step>
+
+  <Step title="Add a visual layout (optional)">
+    If you want the key editor to render your keyboard correctly, add an entry to `deviceVisualLayouts`. Each inner list is a row of key IDs in left-to-right display order:
+
+    ```dart
+    final deviceVisualLayouts = {
+      "MyCustomKeyboard": [
+        ["0,0", "0,1", "0,2", /* ... */],
+        ["1,0", "1,1", /* ... */],
+      ],
+    };
+    ```
+  </Step>
+
+  <Step title="Rebuild the application">
+    ```bash
+    flutter run -d windows
+    ```
+
+    SwitchPalette will now include your keyboard in the HID scan on startup.
+  </Step>
+</Steps>
+
+<Warning>
+  The `name` field in `MyDevice` must exactly match the key strings used in `deviceLayouts` and `deviceVisualLayouts`. A mismatch will prevent the layout from loading.
+</Warning>
